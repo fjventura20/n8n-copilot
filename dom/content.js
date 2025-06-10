@@ -7,12 +7,22 @@ const resourceURLCache = {};
 function injectChatbotScript() {
   // Check if chatbot scripts are already loaded
   if (!document.getElementById('n8n-builder-chatbot-script')) {
-    // Inject chatbot script
-    const script = document.createElement('script');
-    script.id = 'n8n-builder-chatbot-script';
-    script.src = chrome.runtime.getURL('chatbot/chatbot.js');
-    document.head.appendChild(script);
-    console.log('Chatbot script injected');
+    // Inject chatbot modules and main script in order
+    const scriptsToInject = [
+      'chatbot/modules/chatbot-ui.js',
+      'chatbot/modules/chatbot-api.js',
+      'chatbot/modules/chatbot-workflow.js',
+      'chatbot/chatbot.js'
+    ];
+
+    scriptsToInject.forEach(scriptPath => {
+      const script = document.createElement('script');
+      script.src = chrome.runtime.getURL(scriptPath);
+      // Use a consistent ID pattern for all injected scripts
+      script.id = `n8n-builder-${scriptPath.replace(/\//g, '-')}`;
+      document.head.appendChild(script);
+      console.log(`${scriptPath} injected`);
+    });
   }
 }
 
@@ -280,13 +290,14 @@ function setupCommunicationBridge() {
         break;
 
       case 'proxyFetch':
-        console.log('Content script: Proxying fetch request to background script');
+        console.log('Content script: Proxying fetch request to background script for requestId:', data.requestId);
         try {
           const response = await new Promise((resolve, reject) => {
             chrome.runtime.sendMessage({
               action: 'proxyFetch',
               url: data.url,
-              options: data.options
+              options: data.options,
+              requestId: data.requestId
             }, response => {
               if (chrome.runtime.lastError) {
                 console.error('Chrome runtime error:', chrome.runtime.lastError);
@@ -302,7 +313,8 @@ function setupCommunicationBridge() {
               type: 'proxyFetchResponse',
               success: response.success,
               data: response.data,
-              error: response.error
+              error: response.error,
+              requestId: response.requestId
             }
           }));
         } catch (error) {
@@ -311,7 +323,8 @@ function setupCommunicationBridge() {
             detail: {
               type: 'proxyFetchResponse',
               success: false,
-              error: error.toString()
+              error: error.toString(),
+              requestId: data.requestId
             }
           }));
         }

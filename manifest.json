@@ -43,7 +43,10 @@
         "chatbot/chatbot.html",
         "action/icons/chat-icon-48.png",
         "action/styles.css",
-        "action/settings/settings.css"
+        "action/settings/settings.css",
+        "chatbot/modules/chatbot-ui.js",
+        "chatbot/modules/chatbot-api.js",
+        "chatbot/modules/chatbot-workflow.js"
       ],
       "matches": ["<all_urls>"]
     }
