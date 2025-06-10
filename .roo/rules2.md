@@ -1,0 +1,2 @@
+- Always keep the design minimal but good looking.
+- Use Context7 MCP tool to always gather latest documentation / knowledge about a library.

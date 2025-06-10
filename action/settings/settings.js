@@ -16,37 +16,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const n8nApiUrlInput = document.getElementById('n8n-api-url');
   const n8nApiKeyInput = document.getElementById('n8n-api-key');
   
-  // Centralized n8n page detection
-  function isN8nPage(url) {
-    return url.includes('n8n') || 
-           url.includes('workflow') || 
-           url.includes('execution') ||
-           url.includes('localhost');
-  }
-  
-  // Check if current tab is an n8n page
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const url = tabs[0].url;
-    const isN8nDetected = isN8nPage(url);
-    
-    // Store the detection result for other scripts to use
-    chrome.storage.local.set({ isN8nPage: isN8nDetected }, () => {
-      console.log('n8n page status set in storage:', isN8nDetected);
-      
-      // Update UI based on detection
-      if (isN8nDetected) {
-        statusIndicator.classList.add('active');
-        statusIndicator.classList.remove('inactive');
-        statusText.textContent = 'On an n8n page';
-        showChatButton.disabled = false;
-      } else {
-        statusIndicator.classList.add('inactive');
-        statusIndicator.classList.remove('active');
-        statusText.textContent = 'Not an n8n page';
-        showChatButton.disabled = true; // Disable button on non-n8n pages
-      }
-    });
-  });
+  // Page detection is now handled in the chatbot script.
+  // The popup UI will be simplified to always allow showing the chat.
+  statusIndicator.classList.add('active');
+  statusText.textContent = 'Ready';
+  showChatButton.disabled = false;
   
   // Load saved settings
   chrome.storage.sync.get([

@@ -1,7 +1,7 @@
 // chatbot/chatbot.js
 
 // Force isN8nPage to true for development purposes
-let isN8nPage = true;
+// The isN8nPage check is now done directly in the toggleChat function.
 
 // Chat memory to maintain conversation context
 let chatMemory = [];
@@ -35,11 +35,7 @@ window.addEventListener('n8nCopilotContentEvent', (event) => {
     toggleChat();
   }
   
-  if (data.type === 'isN8nPageResponse') {
-    // Comment out for development to keep isN8nPage true
-    // isN8nPage = data.isN8nPage;
-    console.log('Got n8n page status (ignored for dev):', data.isN8nPage);
-  }
+  // Removed isN8nPageResponse handler as it's no longer needed.
   
   if (data.type === 'resourceURLs') {
     // Store the URLs provided by the content script
@@ -63,6 +59,70 @@ window.addEventListener('n8nCopilotContentEvent', (event) => {
     if (window.processChatHtml) {
       window.processChatHtml(data.html);
     }
+  }
+  
+  if (data.type === 'workflowDataResponse') {
+    console.log('Received workflow data response:', data);
+    console.log('data.data exists:', !!data.data);
+    console.log('data.data content:', data.data);
+    console.log('data.data keys:', data.data ? Object.keys(data.data) : 'no data');
+    console.log('data.data.nodes:', data.data?.nodes);
+    console.log('data.data.name:', data.data?.name);
+    console.log('data.data.id:', data.data?.id);
+    
+    // More flexible validation - accept any workflow data structure
+    if (data.data && (
+      data.data.nodes?.length > 0 ||
+      data.data.name ||
+      data.data.id ||
+      Object.keys(data.data).length > 0
+    )) {
+      console.log('Processing workflow data with', data.data.nodes?.length || 0, 'nodes');
+      const workflowPrompt = `
+        The user wants a description of the current n8n workflow.
+        Here is the workflow data:
+        Workflow Name: ${data.data.name || 'Unnamed Workflow'}
+        Workflow ID: ${data.data.id || 'No ID'}
+        Nodes: ${data.data.nodes?.length > 0 ? JSON.stringify(data.data.nodes, null, 2) : 'No nodes found'}
+        Connections: ${data.data.connections ? JSON.stringify(data.data.connections, null, 2) : 'No connections found'}
+        
+        ${data.data.nodes?.length > 0
+          ? 'Please provide a concise, high-level summary of what this workflow does based on its nodes and connections.'
+          : 'This appears to be an empty workflow. Please explain that the workflow currently has no nodes and suggest what the user might want to do next.'
+        }
+      `;
+      addMessage('user', 'Describe this workflow'); // Add user message to chat history for context
+      callOpenAI(workflowPrompt);
+    } else {
+      console.log('No valid workflow data found. data.data:', data.data);
+      console.log('Validation failed - data.data keys:', data.data ? Object.keys(data.data) : 'no data');
+      addMessage('assistant', `I can see you're working on an n8n workflow, but I'm currently unable to access the live workflow data due to browser security limitations.
+
+**What I can help with instead:**
+• General n8n questions and best practices
+• Node explanations and usage tips
+• Workflow design patterns and strategies
+• Troubleshooting common n8n issues
+• API and integration guidance
+
+**For workflow-specific help:**
+• Save your workflow and try the description feature again
+• Share your workflow JSON for detailed analysis
+• Ask specific questions about nodes or connections you're working with
+
+Feel free to ask me anything about n8n - I'm here to help! 🚀`);
+      console.error('Failed to retrieve workflow data.', data.error || 'No valid data structure found');
+    }
+  }
+  
+  if (data.type === 'n8nPageStatus') {
+    console.log('Received n8n page status:', data.isN8nPage);
+    updateN8nPageIndicator('connected');
+  }
+  
+  if (data.type === 'pong') {
+    console.log('Received pong from content script');
+    updateN8nPageIndicator('connected');
   }
   
   // Handle settings updates including API key
@@ -94,7 +154,7 @@ function sendToContentScript(data) {
 
 // Get n8n page status, resource URLs, and settings
 function initialize() {
-  sendToContentScript({ type: 'getIsN8nPage' });
+  // Removed getIsN8nPage call.
   sendToContentScript({ type: 'getResourceURLs' });
   sendToContentScript({ type: 'getSettings' });
 }
@@ -171,6 +231,12 @@ function showMiniToast(message) {
   }, 10);
 }
 
+// New function to check if the current page is an n8n page directly.
+function isN8nPage() {
+  const url = window.location.href;
+  return url.includes('/workflow/') || url.includes('/execution/');
+}
+
 // Toggle chat visibility
 function toggleChat() {
   console.log('toggleChat called');
@@ -179,9 +245,13 @@ function toggleChat() {
     console.log('Removing existing chat');
     existingChat.remove();
   } else {
-    // Always initialize the chatbot regardless of page type for development
-    console.log('Opening chat (always enabled for dev)');
-    initChatbot();
+    if (isN8nPage()) {
+      initChatbot();
+    } else {
+      console.log('Not an n8n page, chat not opened.');
+      // Optionally, provide user feedback that this feature is only for n8n pages.
+      showMiniToast('This feature is for n8n pages only.');
+    }
   }
 }
 
@@ -562,15 +632,31 @@ Ensure the JSON is valid and follows n8n's schema. Only include nodes and connec
 function handleSendMessage() {
   const inputElement = document.getElementById('n8n-builder-input');
   if (!inputElement) return;
-  
+
   const userMessage = inputElement.value.trim();
   if (userMessage) {
     addMessage('user', userMessage);
     inputElement.value = '';
-    
-    // Call OpenAI API
-    callOpenAI(userMessage);
+
+    if (userMessage.toLowerCase().includes('describe this workflow')) {
+      const workflow = getWorkflowFromPage();
+      if (workflow) {
+        const workflowDescription = `The current workflow is named "${workflow.name}". It has ${workflow.nodes.length} nodes and ${Object.keys(workflow.connections).length} connections.`;
+        addMessage('assistant', workflowDescription);
+      } else {
+        addMessage('assistant', "I couldn't find any workflow information on this page.");
+      }
+    } else {
+      callOpenAI(userMessage);
+    }
   }
+}
+
+// Get workflow data from the n8n page context
+function getWorkflowFromPage() {
+  console.log('Requesting workflow data from content script...');
+  sendToContentScript({ type: 'getWorkflowData' });
+  // The response will be handled by the workflowDataResponse event listener
 }
 
 // Set up event listeners
@@ -607,11 +693,131 @@ function setupEventListeners() {
       injectChatIcon();
     });
   }
+  
+  // Set up periodic connection testing with content script
+  setInterval(testContentScriptConnection, 5000); // Test every 5 seconds
+  
+  // Also test when URL changes (for SPAs)
+  let currentUrl = window.location.href;
+  setInterval(() => {
+    if (window.location.href !== currentUrl) {
+      currentUrl = window.location.href;
+      testContentScriptConnection(); // Test connection after navigation
+    }
+  }, 1000);
+  
+  const clearButton = document.getElementById('n8n-builder-clear');
+  if (clearButton) {
+    clearButton.addEventListener('click', () => {
+      // Clear chat memory and messages
+      chatMemory = [];
+      const messagesArea = document.getElementById('n8n-builder-messages');
+      if (messagesArea) {
+        messagesArea.innerHTML = '';
+        // Add welcome message back
+        if (!apiKey) {
+          addMessage('assistant', 'Welcome! Please add your OpenAI API key in the extension settings to use the chat functionality.');
+        } else {
+          addMessage('assistant', 'Chat cleared. How can I help you build your n8n workflow?');
+        }
+      }
+    });
+  }
+}
+
+// Store communication status with content script
+let contentScriptConnected = false;
+let lastContentScriptResponse = 0;
+
+// Update n8n page indicator to show communication status
+function updateN8nPageIndicator(status = null) {
+  const indicator = document.getElementById('n8n-page-indicator');
+  console.log('Updating indicator, element found:', !!indicator, 'status:', status);
+  
+  let logMessage, isConnected;
+  
+  if (status === 'connected') {
+    contentScriptConnected = true;
+    lastContentScriptResponse = Date.now();
+    isConnected = true;
+    logMessage = 'Content script communication: CONNECTED';
+  } else if (status === 'disconnected' || !contentScriptConnected) {
+    isConnected = false;
+    logMessage = 'Content script communication: DISCONNECTED';
+  } else {
+    // Check if we've received a response recently (within 10 seconds)
+    const timeSinceLastResponse = Date.now() - lastContentScriptResponse;
+    if (timeSinceLastResponse < 10000 && contentScriptConnected) {
+      isConnected = true;
+      logMessage = 'Content script communication: ACTIVE';
+    } else {
+      isConnected = false;
+      logMessage = 'Content script communication: TIMEOUT';
+    }
+  }
+  
+  if (indicator) {
+    const indicatorClass = isConnected ? 'n8n-detected' : 'n8n-not-detected';
+    const title = isConnected ? 'Extension Connected - Can Access Page Data' : 'Extension Disconnected - Cannot Access Page Data';
+    
+    indicator.className = `n8n-page-indicator ${indicatorClass}`;
+    indicator.title = title;
+    console.log(`n8n Co Pilot v2.0 - ${logMessage} - Applied class: ${indicatorClass}`);
+  } else {
+    console.log('n8n Co Pilot v2.0 - Indicator element not found in DOM');
+    // Fallback: Add status to chat header if indicator element doesn't exist
+    addStatusToHeader(isConnected);
+  }
+}
+
+// Fallback function to add status text to chat header
+function addStatusToHeader(isConnected) {
+  const header = document.getElementById('n8n-builder-header');
+  if (header) {
+    // Remove existing status
+    const existingStatus = header.querySelector('.connection-status');
+    if (existingStatus) {
+      existingStatus.remove();
+    }
+    
+    // Add new status
+    const statusElement = document.createElement('span');
+    statusElement.className = 'connection-status';
+    statusElement.style.cssText = `
+      margin-left: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: bold;
+      ${isConnected ?
+        'background: #4CAF50; color: white;' :
+        'background: #f44336; color: white;'
+      }
+    `;
+    statusElement.textContent = isConnected ? '🟢 CONNECTED' : '🔴 DISCONNECTED';
+    statusElement.title = isConnected ?
+      'Extension can access page data' :
+      'Extension cannot access page data';
+    
+    header.appendChild(statusElement);
+    console.log('Added fallback status indicator to header');
+  }
+}
+
+// Test content script connection
+function testContentScriptConnection() {
+  console.log('Testing content script connection...');
+  sendToContentScript({ type: 'ping' });
+  
+  // Set a timeout to check if we got a response
+  setTimeout(() => {
+    updateN8nPageIndicator();
+  }, 1000);
 }
 
 // Initialize the chatbot
 function initChatbot() {
-  console.log('initChatbot called');
+  console.log('n8n Co Pilot v2.0 - initChatbot called');
   // First ensure we have the CSS
   if (!document.getElementById('n8n-builder-styles')) {
     console.log('Requesting CSS');
@@ -625,11 +831,25 @@ function initChatbot() {
     console.log('Setting up event listeners');
     setupEventListeners();
     
+    // Test initial content script connection
+    testContentScriptConnection();
+    
     // Check if API key is set
     if (!apiKey) {
       addMessage('assistant', 'Welcome! Please add your OpenAI API key in the extension settings to use the chat functionality.');
     } else {
-      addMessage('assistant', 'Hello! I can help you build your n8n workflow. What would you like to add?');
+      addMessage('assistant', `Hello! I'm your n8n Copilot 🚀
+
+I can help you with:
+• n8n workflow design and best practices
+• Node explanations and usage tips
+• Automation strategies and patterns
+• Troubleshooting and debugging
+• API integrations and custom solutions
+
+**Note:** Live workflow analysis is currently limited due to browser security restrictions, but I can assist with general n8n questions and provide guidance based on your specific needs.
+
+What would you like to know about n8n?`);
     }
   });
 }

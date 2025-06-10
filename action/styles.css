@@ -248,4 +248,19 @@ code {
     font-size: 0.9em;
 }
 
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.settings-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 20px;
+  padding: 5px;
+}
+
 /* Add any additional harmonizing styles below as needed */

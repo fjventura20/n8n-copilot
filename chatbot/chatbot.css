@@ -30,9 +30,35 @@
     border-bottom: 1px solid #e1e1e1;
 }
 
+.n8n-builder-title-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 .n8n-builder-title {
     font-weight: 600;
     font-size: 16px;
+}
+
+.n8n-page-indicator {
+    font-size: 12px;
+    transition: color 0.3s ease;
+}
+
+.n8n-page-indicator.n8n-detected {
+    color: #4CAF50;
+    text-shadow: 0 0 4px rgba(76, 175, 80, 0.5);
+}
+
+.n8n-page-indicator.n8n-not-detected {
+    color: #ffcccc;
+}
+
+.version-indicator {
+    font-size: 10px;
+    opacity: 0.7;
+    font-weight: 400;
 }
 
 .n8n-builder-controls button {
