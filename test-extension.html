@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extension Test Page</title>
+</head>
+<body>
+    <h1>Extension Test Page</h1>
+    <p>This page is for testing the n8n Co Pilot extension.</p>
+    <p>Open the browser console to check for JavaScript errors.</p>
+    
+    <script>
+        console.log('Test page loaded');
+        
+        // Listen for extension events
+        window.addEventListener('n8nCopilotContentEvent', (event) => {
+            console.log('Extension event received:', event.detail);
+        });
+        
+        // Test if extension is working
+        setTimeout(() => {
+            console.log('Checking for extension...');
+        }, 1000);
+    </script>
+</body>
+</html>

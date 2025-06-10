@@ -7,8 +7,33 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('Message received in background:', request);
   
-    // No longer need to handle pageStatus since detection is in settings.js
-    // Instead, we'll handle other message types
+    // Handle proxy requests from content scripts
+    if (request.action === 'proxyFetch') {
+      console.log('Proxying fetch request to:', request.url);
+      console.log('Proxy fetch options:', request.options);
+      fetch(request.url, request.options)
+        .then(response => {
+          if (!response.ok) {
+            return response.text().then(text => {
+              throw new Error(`HTTP error! status: ${response.status}, statusText: ${response.statusText}, body: ${text}`);
+            });
+          }
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            return response.json();
+          }
+          return response.text();
+        })
+        .then(data => {
+          console.log('Proxy fetch successful for requestId:', request.requestId);
+          sendResponse({ success: true, data, requestId: request.requestId });
+        })
+        .catch(error => {
+          console.error('Proxy fetch failed for requestId:', request.requestId, error);
+          sendResponse({ success: false, error: error.toString(), requestId: request.requestId });
+        });
+      return true; // Indicates that the response is sent asynchronously
+    }
   
     // Pass through any settings updates from popup to content script
     if (request.action === 'settingsUpdated') {
@@ -21,6 +46,8 @@ chrome.runtime.onInstalled.addListener(() => {
           });
         });
       });
+      sendResponse({ status: 'received' });
+      return true;
     }
   
     // Handle showChat request from settings
@@ -32,8 +59,11 @@ chrome.runtime.onInstalled.addListener(() => {
           chrome.tabs.sendMessage(tabs[0].id, request);
         }
       });
+      sendResponse({ status: 'received' });
+      return true;
     }
   
+    // Default response for unhandled actions
     sendResponse({ status: 'received' });
     return true;
   });

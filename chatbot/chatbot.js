@@ -143,6 +143,12 @@ Feel free to ask me anything about n8n - I'm here to help! 🚀`);
       }
     }
   }
+  
+  // Handle rejectUnauthorized setting
+  if (data.type === 'rejectUnauthorized') {
+    window.rejectUnauthorized = data.value !== false; // Default to true
+    console.log('rejectUnauthorized setting:', window.rejectUnauthorized);
+  }
 });
 
 // Function to communicate with content script
@@ -157,6 +163,10 @@ function initialize() {
   // Removed getIsN8nPage call.
   sendToContentScript({ type: 'getResourceURLs' });
   sendToContentScript({ type: 'getSettings' });
+
+  // Retrieve rejectUnauthorized setting from storage via content script
+  // Since chrome.storage is not available in injected scripts
+  sendToContentScript({ type: 'getRejectUnauthorized' });
 }
 
 // Safely get resource URL
@@ -293,12 +303,38 @@ function extractJsonFromResponse(text) {
   
   if (matches.length > 0) {
     try {
-      // Extract the JSON string and parse it
-      const jsonString = matches[0][1];
+      // Extract the JSON string and clean it
+      let jsonString = matches[0][1].trim();
+      
+      // Remove any trailing commas before closing braces/brackets
+      jsonString = jsonString.replace(/,(\s*[}\]])/g, '$1');
+      
+      // Try to fix common JSON issues
+      jsonString = jsonString.replace(/([{,]\s*)(\w+):/g, '$1"$2":'); // Add quotes to unquoted keys
+      
       return JSON.parse(jsonString);
     } catch (error) {
       console.error('Error parsing JSON:', error);
+      console.error('JSON string was:', matches[0][1]);
       return null;
+    }
+  }
+  
+  // Also try to find JSON without code blocks
+  const directJsonRegex = /\{[\s\S]*\}/g;
+  const directMatches = [...text.matchAll(directJsonRegex)];
+  
+  for (const match of directMatches) {
+    try {
+      let jsonString = match[0].trim();
+      
+      // Remove any trailing commas before closing braces/brackets
+      jsonString = jsonString.replace(/,(\s*[}\]])/g, '$1');
+      
+      return JSON.parse(jsonString);
+    } catch (error) {
+      // Continue to next match
+      continue;
     }
   }
   
@@ -371,26 +407,68 @@ async function injectToCanvas(json) {
   const workflowId = workflowIdMatch[1];
   console.log('Workflow ID:', workflowId);
 
-  // 2. Check API URL and Key
+  // 2. Check API URL and Key - if not available, try fallback mode
   if (!n8nApiUrl || !n8nApiKey) {
-    showMiniToast('Please set n8n API URL and key in settings');
-    return;
+    console.log('API credentials not available, attempting fallback canvas injection');
+    return injectToCanvasFallback(json);
+  }
+
+  // Allow HTTP for localhost/127.0.0.1, require HTTPS for other domains
+  const isLocalhost = n8nApiUrl.includes('localhost') || n8nApiUrl.includes('127.0.0.1');
+  if (!isLocalhost && !n8nApiUrl.startsWith('https://')) {
+    console.log('Invalid API URL, attempting fallback canvas injection');
+    return injectToCanvasFallback(json);
+  }
+  if (!n8nApiUrl.startsWith('http://') && !n8nApiUrl.startsWith('https://')) {
+    console.log('Invalid API URL format, attempting fallback canvas injection');
+    return injectToCanvasFallback(json);
   }
 
   try {
-    // 3. Fetch the current workflow
+    // 3. Fetch the current workflow via the content script proxy
     const getUrl = `${n8nApiUrl}/api/v1/workflows/${workflowId}`;
-    console.log('GET request to:', getUrl);
-    const getResponse = await fetch(getUrl, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-N8N-API-KEY': n8nApiKey
-      }
+    console.log('Proxying GET request to:', getUrl);
+    console.log('Sending message to content script...');
+    const getResponse = await new Promise((resolve, reject) => {
+      // Send message to content script using the existing communication pattern
+      window.dispatchEvent(new CustomEvent('n8nCopilotInjectedEvent', {
+        detail: {
+          type: 'proxyFetch',
+          url: getUrl,
+          options: {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-N8N-API-KEY': n8nApiKey
+            }
+          }
+        }
+      }));
+
+      // Listen for response from content script
+      const responseHandler = (event) => {
+        if (event.detail.type === 'proxyFetchResponse') {
+          window.removeEventListener('n8nCopilotContentEvent', responseHandler);
+          console.log('Received response from content script:', event.detail);
+          if (event.detail.success) {
+            resolve(event.detail.data);
+          } else {
+            reject(new Error(event.detail.error || 'No response from content script'));
+          }
+        }
+      };
+      
+      window.addEventListener('n8nCopilotContentEvent', responseHandler);
+      
+      // Timeout after 30 seconds
+      setTimeout(() => {
+        window.removeEventListener('n8nCopilotContentEvent', responseHandler);
+        reject(new Error('Timeout waiting for response from content script'));
+      }, 30000);
     });
-    console.log('GET response status:', getResponse.status);
-    const workflow = await getResponse.json();
-    console.log('Current workflow object:', workflow);
+
+    console.log('Current workflow object:', getResponse);
+    const workflow = getResponse;
 
     // 4. Merge the new nodes and connections
     const updatedWorkflow = mergeWorkflow(workflow, json);
@@ -400,40 +478,140 @@ async function injectToCanvas(json) {
     const cleanedWorkflow = cleanWorkflowForPut(updatedWorkflow);
     console.log('Cleaned workflow to send (PUT):', cleanedWorkflow);
 
-    // 5. Update the workflow
+    // 5. Update the workflow via the content script proxy (consistent with GET request)
     const putUrl = `${n8nApiUrl}/api/v1/workflows/${workflowId}`;
-    console.log('PUT request to:', putUrl);
-    const updateResponse = await fetch(putUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-N8N-API-KEY': n8nApiKey
-      },
-      body: JSON.stringify(cleanedWorkflow)
+    console.log('Proxying PUT request to:', putUrl);
+    const updateResponse = await new Promise((resolve, reject) => {
+      // Send message to content script using the existing communication pattern
+      window.dispatchEvent(new CustomEvent('n8nCopilotInjectedEvent', {
+        detail: {
+          type: 'proxyFetch',
+          url: putUrl,
+          options: {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-N8N-API-KEY': n8nApiKey
+            },
+            body: JSON.stringify(cleanedWorkflow)
+          }
+        }
+      }));
+
+      // Listen for response from content script
+      const responseHandler = (event) => {
+        if (event.detail.type === 'proxyFetchResponse') {
+          window.removeEventListener('n8nCopilotContentEvent', responseHandler);
+          console.log('Received PUT response from content script:', event.detail);
+          if (event.detail.success) {
+            resolve(event.detail.data);
+          } else {
+            reject(new Error(event.detail.error || 'No response from content script'));
+          }
+        }
+      };
+      
+      window.addEventListener('n8nCopilotContentEvent', responseHandler);
+      
+      // Timeout after 30 seconds
+      setTimeout(() => {
+        window.removeEventListener('n8nCopilotContentEvent', responseHandler);
+        reject(new Error('Timeout waiting for PUT response from content script'));
+      }, 30000);
     });
 
-    // Robustly parse the response body
-    let putResponseBody;
-    const contentType = updateResponse.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      putResponseBody = await updateResponse.json();
-    } else {
-      putResponseBody = await updateResponse.text();
-    }
-    console.log('PUT response body:', putResponseBody);
+    console.log('PUT response body:', updateResponse);
 
-    if (updateResponse.ok) {
-      showMiniToast('Workflow updated successfully!');
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
+    // Since the background script now handles the ok check, we just check for presence of data
+    if (updateResponse) {
+        showMiniToast('Workflow updated successfully!');
+        setTimeout(() => {
+            window.location.reload();
+        }, 1500);
     } else {
-      console.error('Failed to update workflow:', updateResponse.status, putResponseBody);
-      throw new Error(`Failed to update workflow: ${updateResponse.status} - ${putResponseBody}`);
+        // The error is already logged by the catch block
+        // No need to throw again, just avoid the success message.
     }
   } catch (error) {
-    console.error('Error updating workflow:', error);
-    showMiniToast(`Error: ${error.message}`);
+    console.error('Error updating workflow via API:', error);
+    console.log('Attempting fallback canvas injection due to API error');
+    return injectToCanvasFallback(json);
+  }
+}
+
+// Fallback canvas injection when API is not available
+function injectToCanvasFallback(json) {
+  console.log('Using fallback canvas injection method');
+  
+  try {
+    // Try to find n8n canvas elements and inject directly
+    const canvasContainer = document.querySelector('[data-test-id="canvas"]') ||
+                           document.querySelector('.canvas-container') ||
+                           document.querySelector('#canvas') ||
+                           document.querySelector('.node-view');
+    
+    if (!canvasContainer) {
+      showMiniToast('Canvas not found. Please ensure you are on an n8n workflow page.');
+      return;
+    }
+
+    // Show the JSON in a copyable format as a fallback
+    const jsonString = JSON.stringify(json, null, 2);
+    
+    // Create a modal with the JSON for manual copying
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      border: 2px solid #ccc;
+      border-radius: 8px;
+      padding: 20px;
+      max-width: 600px;
+      max-height: 400px;
+      overflow: auto;
+      z-index: 10000;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    `;
+    
+    modal.innerHTML = `
+      <h3>Workflow Components (API Unavailable)</h3>
+      <p>Copy this JSON and manually import it into your n8n workflow:</p>
+      <textarea readonly style="width: 100%; height: 200px; font-family: monospace; font-size: 12px;">${jsonString}</textarea>
+      <div style="margin-top: 10px;">
+        <button id="copyJsonBtn" style="margin-right: 10px; padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">Copy JSON</button>
+        <button id="closeModalBtn" style="padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">Close</button>
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Add event listeners
+    document.getElementById('copyJsonBtn').addEventListener('click', () => {
+      const textarea = modal.querySelector('textarea');
+      textarea.select();
+      document.execCommand('copy');
+      showMiniToast('JSON copied to clipboard!');
+    });
+    
+    document.getElementById('closeModalBtn').addEventListener('click', () => {
+      document.body.removeChild(modal);
+    });
+    
+    // Auto-close after 30 seconds
+    setTimeout(() => {
+      if (document.body.contains(modal)) {
+        document.body.removeChild(modal);
+      }
+    }, 30000);
+    
+    showMiniToast('Workflow JSON ready for manual import');
+    
+  } catch (error) {
+    console.error('Fallback injection failed:', error);
+    showMiniToast('Unable to inject workflow. Please check console for details.');
   }
 }
 
@@ -548,44 +726,26 @@ function removeLoadingIndicator() {
 // Call OpenAI API
 async function callOpenAI(prompt) {
   if (!apiKey) {
-    addMessage('assistant', 'Error: Please add your OpenAI API key in the extension settings.');
+    addMessage('assistant', 'OpenAI API key is not set. Please configure it in the extension settings.');
     return;
   }
-  
+
   showLoadingIndicator();
-  
+  chatMemory.push({ role: 'user', content: prompt });
+
   try {
-    // Include system message to guide the AI with enhanced n8n-specific instructions
     const messages = [
       {
         role: 'system',
-        content: `You are n8n Co Pilot, an AI assistant specializing in n8n workflow automation.
-Your goal is to help users build effective n8n workflows by providing guidance and generating workflow components.
-
-When a user asks for a specific workflow or node, respond with both:
-1. A natural language explanation of the solution
-2. A JSON code block that can be directly added to their n8n workflow
-
-For JSON workflow snippets, use the following format:
-\`\`\`json
-{
-  "nodes": [
-    {
-      "name": "Node Name",
-      "type": "n8n-nodes-base.nodeType",
-      "parameters": { ... },
-      "position": [x, y]
-    }
-  ],
-  "connections": { ... }
-}
-\`\`\`
-
-Ensure the JSON is valid and follows n8n's schema. Only include nodes and connections that are explicitly requested.`
+        content: `You are an n8n expert assistant.
+        - Provide concise and accurate answers.
+        - When asked to create a workflow, provide the JSON for the nodes and connections.
+        - When asked to perform an action (e.g., rename a node), respond with a JSON object describing the command.
+        - Example command: { "command": "rename_node", "oldName": "Webhook", "newName": "Test_Hook" }`
       },
       ...chatMemory
     ];
-    
+
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -593,38 +753,33 @@ Ensure the JSON is valid and follows n8n's schema. Only include nodes and connec
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-4',
+        model: 'gpt-4-1106-preview',
         messages: messages,
-        temperature: 0.7,
-        max_tokens: 1000
+        temperature: 0.7
       })
     });
-    
+
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
     const data = await response.json();
-    removeLoadingIndicator();
-    
-    if (data.error) {
-      console.error('OpenAI API error:', data.error);
-      addMessage('assistant', `Error: ${data.error.message}`);
-      return;
-    }
-    
-    if (data.choices && data.choices[0] && data.choices[0].message) {
-      const aiResponse = data.choices[0].message.content;
-      addMessage('assistant', aiResponse);
-      
-      // Extract and process JSON if present
-      const extractedJson = extractJsonFromResponse(aiResponse);
-      if (extractedJson) {
-        processWorkflowJson(extractedJson);
-      }
+    const assistantMessage = data.choices[0].message.content;
+    chatMemory.push({ role: 'assistant', content: assistantMessage });
+
+    const commandJson = extractJsonFromResponse(assistantMessage);
+    if (commandJson && commandJson.command) {
+      handleN8nApiCommand(commandJson);
     } else {
-      addMessage('assistant', 'I encountered an issue processing your request. Please try again.');
+      addMessage('assistant', assistantMessage);
+      const workflowJson = extractJsonFromResponse(assistantMessage);
+      if (workflowJson) {
+        processWorkflowJson(workflowJson);
+      }
     }
   } catch (error) {
     console.error('Error calling OpenAI:', error);
+    addMessage('assistant', `Sorry, I encountered an error: ${error.message}`);
+  } finally {
     removeLoadingIndicator();
-    addMessage('assistant', `Error: ${error.message || 'Failed to connect to OpenAI API'}`);
   }
 }
 

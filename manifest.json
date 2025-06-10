@@ -22,7 +22,8 @@
     "scripting"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "https://*/*",
+    "http://*/*"
   ],
   "background": {
     "service_worker": "background/background.js"
@@ -40,9 +41,14 @@
         "chatbot/chatbot.js",
         "chatbot/chatbot.css",
         "chatbot/chatbot.html",
-        "action/icons/chat-icon-48.png"
+        "action/icons/chat-icon-48.png",
+        "action/styles.css",
+        "action/settings/settings.css"
       ],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  }
 }

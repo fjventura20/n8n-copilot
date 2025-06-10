@@ -15,6 +15,11 @@
       <div id="status-indicator" class="status-indicator"></div>
       <span id="status-text">Checking status...</span>
     </div>
+    <div class="setting-item">
+      <label for="reject-unauthorized">Reject Unauthorized (DEV ONLY)</label>
+      <input type="checkbox" id="reject-unauthorized">
+      <p class="setting-description">Disable TLS verification (ONLY for development with self-signed certificates)</p>
+    </div>
     
     <div class="buttons">
       <button id="show-chat">Show AI Assistant</button>
@@ -50,7 +55,7 @@
       <div class="api-section">
         <div class="setting">
           <label for="n8n-api-url">n8n API URL:</label>
-          <input type="text" id="n8n-api-url" placeholder="https://your-n8n-instance.com" autocomplete="off">
+          <input type="text" id="n8n-api-url" placeholder="http://localhost:5678 or https://your-n8n-instance.com" autocomplete="off">
         </div>
         <div class="setting">
           <label for="n8n-api-key">n8n API Key:</label>

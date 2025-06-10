@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const anthropicKeyInput = document.getElementById('anthropic-key');
   const n8nApiUrlInput = document.getElementById('n8n-api-url');
   const n8nApiKeyInput = document.getElementById('n8n-api-key');
+  const rejectUnauthorizedCheckbox = document.getElementById('reject-unauthorized');
   
   // Page detection is now handled in the chatbot script.
   // The popup UI will be simplified to always allow showing the chat.
@@ -28,9 +29,10 @@ document.addEventListener('DOMContentLoaded', () => {
     'anthropicKey', 
     'activeProvider',
     'n8nApiUrl',
-    'n8nApiKey'
-  ], (result) => {
-    if (result.openaiKey) {
+   'n8nApiKey',
+   'rejectUnauthorized'
+ ], (result) => {
+   if (result.openaiKey) {
       openaiKeyInput.value = result.openaiKey;
     }
     
@@ -45,7 +47,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (result.n8nApiKey) {
       n8nApiKeyInput.value = result.n8nApiKey;
     }
-    
+
+    // Set rejectUnauthorized
+    rejectUnauthorizedCheckbox.checked = result.rejectUnauthorized !== false; // Default to true
+
     // Set active provider
     if (result.activeProvider) {
       toggleContainer.setAttribute('data-selected', result.activeProvider);
@@ -139,7 +144,8 @@ document.addEventListener('DOMContentLoaded', () => {
       anthropicKey, 
       activeProvider,
       n8nApiUrl,
-      n8nApiKey
+      n8nApiKey,
+      rejectUnauthorized: rejectUnauthorizedCheckbox.checked
     }, () => {
       // Show save confirmation
       saveSettingsButton.textContent = 'Saved!';

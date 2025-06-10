@@ -279,6 +279,44 @@ function setupCommunicationBridge() {
         }));
         break;
 
+      case 'proxyFetch':
+        console.log('Content script: Proxying fetch request to background script');
+        try {
+          const response = await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({
+              action: 'proxyFetch',
+              url: data.url,
+              options: data.options
+            }, response => {
+              if (chrome.runtime.lastError) {
+                console.error('Chrome runtime error:', chrome.runtime.lastError);
+                return reject(chrome.runtime.lastError);
+              }
+              resolve(response);
+            });
+          });
+
+          console.log('Content script: Received response from background script:', response);
+          window.dispatchEvent(new CustomEvent('n8nCopilotContentEvent', {
+            detail: {
+              type: 'proxyFetchResponse',
+              success: response.success,
+              data: response.data,
+              error: response.error
+            }
+          }));
+        } catch (error) {
+          console.error('Content script: Error in proxy fetch:', error);
+          window.dispatchEvent(new CustomEvent('n8nCopilotContentEvent', {
+            detail: {
+              type: 'proxyFetchResponse',
+              success: false,
+              error: error.toString()
+            }
+          }));
+        }
+        break;
+
       case 'getChatHtml':
         const html = await fetchResource('chatbot/chatbot.html');
         window.dispatchEvent(new CustomEvent('n8nCopilotContentEvent', {
@@ -369,6 +407,17 @@ function setupCommunicationBridge() {
                 n8nApiUrl: result.n8nApiUrl || '',
                 n8nApiKey: result.n8nApiKey || ''
               }
+            }
+          }));
+        });
+        break;
+
+      case 'getRejectUnauthorized':
+        chrome.storage.sync.get('rejectUnauthorized', (result) => {
+          window.dispatchEvent(new CustomEvent('n8nCopilotContentEvent', {
+            detail: {
+              type: 'rejectUnauthorized',
+              value: result.rejectUnauthorized
             }
           }));
         });
