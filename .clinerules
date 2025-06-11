@@ -1,0 +1,24 @@
+# Roo Code Rules for n8n-copilot Project
+
+## Platform-Specific Commands
+- Use `;` instead of `&&` as delimiter on Windows with PowerShell
+- Use `Invoke-WebRequest` instead of `curl` on Windows PowerShell
+- Do not use `"""` as it throws an error. Use `"""` instead
+
+## Code Quality & Structure
+- Never create a file longer than 500 lines of code. If a file approaches this limit, refactor by splitting it into modules or helper files
+- Organize code into clearly separated modules, grouped by feature or responsibility
+- Use clear, consistent imports (prefer relative imports within packages)
+- Always check code for indent, syntax, and logic errors after responding and correct any errors
+
+## File Management
+- Files in the reference folder are for reading only. Do not edit or incorporate these files into the application. If you need these files, recreate them
+- If you have multiple tool failures use write_to_file to complete your edits
+
+## Design Guidelines
+- Always keep the design minimal but good looking
+- Use Context7 MCP tool to always gather latest documentation/knowledge about a library
+
+## Mode-Specific Delegation Rules
+- Orchestrator mode: Can only delegate to Code, Ask, Architect, Debug modes
+- BMAD Orchestrator mode: Can only delegate to BMAD modes (BMAD Scrum Master, BMAD Analyst, BMAD Developer, etc.)

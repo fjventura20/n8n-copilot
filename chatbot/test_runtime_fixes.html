@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat History Runtime Fixes Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success {
+            color: green;
+        }
+        .error {
+            color: red;
+        }
+        .info {
+            color: blue;
+        }
+        #test-results {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            white-space: pre-line;
+        }
+    </style>
+</head>
+<body>
+    <h1>Chat History Runtime Fixes Test</h1>
+    <p>This page tests that the JavaScript runtime errors have been fixed.</p>
+    
+    <div class="test-section">
+        <h2>Test Results</h2>
+        <div id="test-results">Loading tests...</div>
+    </div>
+
+    <div class="test-section">
+        <h2>Manual Test Buttons</h2>
+        <button onclick="testShowChatHistory()">Test showChatHistory()</button>
+        <button onclick="testInitChatHistory()">Test initChatHistory()</button>
+        <button onclick="testAllFunctions()">Test All Functions</button>
+    </div>
+
+    <!-- Load the chatbot modules -->
+    <script>
+        // Mock some dependencies that chatbot-ui.js expects
+        window.chatMemory = [];
+        window.MAX_CONVERSATIONS = 10;
+        
+        // Mock functions that might be called
+        window.sendToContentScript = function(msg) {
+            console.log('Mock sendToContentScript called:', msg);
+        };
+        
+        window.isN8nPage = function() {
+            return true;
+        };
+        
+        window.setCookie = function(name, value, days) {
+            console.log('Mock setCookie called:', name, value, days);
+        };
+        
+        window.getCookie = function(name) {
+            console.log('Mock getCookie called:', name);
+            return null;
+        };
+        
+        // Mock DOM elements that might be needed
+        function createMockElements() {
+            if (!document.getElementById('n8n-builder-messages')) {
+                const messagesDiv = document.createElement('div');
+                messagesDiv.id = 'n8n-builder-messages';
+                messagesDiv.style.display = 'none';
+                document.body.appendChild(messagesDiv);
+            }
+            
+            if (!document.getElementById('n8n-builder-history-modal')) {
+                const modalDiv = document.createElement('div');
+                modalDiv.id = 'n8n-builder-history-modal';
+                modalDiv.style.display = 'none';
+                document.body.appendChild(modalDiv);
+            }
+            
+            if (!document.getElementById('n8n-builder-history-container')) {
+                const containerDiv = document.createElement('div');
+                containerDiv.id = 'n8n-builder-history-container';
+                containerDiv.style.display = 'none';
+                document.body.appendChild(containerDiv);
+            }
+        }
+        
+        createMockElements();
+    </script>
+    
+    <!-- Load the actual chatbot-ui.js file -->
+    <script src="modules/chatbot-ui.js"></script>
+    
+    <script>
+        // Test functions
+        function testShowChatHistory() {
+            try {
+                if (typeof showChatHistory === 'function') {
+                    showChatHistory();
+                    logResult('✓ showChatHistory() executed without ReferenceError', 'success');
+                } else {
+                    logResult('✗ showChatHistory is not a function', 'error');
+                }
+            } catch (error) {
+                if (error instanceof ReferenceError) {
+                    logResult('✗ showChatHistory() threw ReferenceError: ' + error.message, 'error');
+                } else {
+                    logResult('✓ showChatHistory() accessible (other error expected): ' + error.message, 'success');
+                }
+            }
+        }
+        
+        function testInitChatHistory() {
+            try {
+                if (typeof initChatHistory === 'function') {
+                    initChatHistory();
+                    logResult('✓ initChatHistory() executed without ReferenceError', 'success');
+                } else {
+                    logResult('✗ initChatHistory is not a function', 'error');
+                }
+            } catch (error) {
+                if (error instanceof ReferenceError) {
+                    logResult('✗ initChatHistory() threw ReferenceError: ' + error.message, 'error');
+                } else {
+                    logResult('✓ initChatHistory() accessible (other error expected): ' + error.message, 'success');
+                }
+            }
+        }
+        
+        function testAllFunctions() {
+            const functionsToTest = [
+                'showChatHistory',
+                'initChatHistory', 
+                'hideChatHistory',
+                'renderChatHistory',
+                'groupMessagesIntoConversations',
+                'loadConversation'
+            ];
+            
+            logResult('\n=== Testing All Functions ===', 'info');
+            
+            functionsToTest.forEach(funcName => {
+                try {
+                    if (typeof window[funcName] === 'function') {
+                        logResult(`✓ ${funcName} is properly defined`, 'success');
+                    } else {
+                        logResult(`✗ ${funcName} is NOT defined or not a function`, 'error');
+                    }
+                } catch (error) {
+                    logResult(`✗ Error testing ${funcName}: ${error.message}`, 'error');
+                }
+            });
+        }
+        
+        function logResult(message, type) {
+            const resultsDiv = document.getElementById('test-results');
+            const span = document.createElement('span');
+            span.className = type;
+            span.textContent = message + '\n';
+            resultsDiv.appendChild(span);
+        }
+        
+        // Run automatic tests when page loads
+        window.addEventListener('load', function() {
+            document.getElementById('test-results').innerHTML = '';
+            logResult('=== Automatic Tests ===', 'info');
+            
+            // Test 1: Check if functions are defined
+            logResult('\n1. Testing function definitions:', 'info');
+            testAllFunctions();
+            
+            // Test 2: Test the specific error scenarios
+            logResult('\n2. Testing specific error scenarios:', 'info');
+            testShowChatHistory();
+            testInitChatHistory();
+            
+            logResult('\n=== Tests Complete ===', 'info');
+            logResult('If you see ✓ marks above, the runtime errors have been fixed!', 'success');
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat History Modal Test</title>
+    <link rel="stylesheet" href="chatbot.css">
+</head>
+<body>
+    <h1>Chat History Modal Test</h1>
+    <p>This test verifies that the chat history modal displays conversations correctly.</p>
+    
+    <button id="test-setup" onclick="setupTestData()">Setup Test Data</button>
+    <button id="test-history" onclick="showChatHistory()">Show Chat History</button>
+    <button id="test-clear" onclick="clearTestData()">Clear Test Data</button>
+    
+    <div id="test-results">
+        <h3>Test Results:</h3>
+        <div id="results-output"></div>
+    </div>
+
+    <!-- Include the chatbot HTML structure -->
+    <div id="n8n-builder-chat" class="n8n-builder-container">
+        <div class="n8n-builder-header">
+            <div class="n8n-builder-title-section">
+                <span class="n8n-builder-title">n8n Co Pilot</span>
+                <span id="n8n-page-indicator" class="n8n-page-indicator" title="n8n Page Status">●</span>
+                <span class="version-indicator">v2.0</span>
+            </div>
+            <div class="n8n-builder-controls">
+                <button id="n8n-builder-minimize" title="Minimize">_</button>
+                <button id="n8n-builder-close" title="Close">×</button>
+            </div>
+        </div>
+        <div class="n8n-builder-messages" id="n8n-builder-messages">
+            <!-- Messages will be added here dynamically -->
+        </div>
+        <div class="n8n-builder-actions" id="n8n-builder-actions">
+            <!-- Action buttons and JSON handling will be added here dynamically -->
+        </div>
+        <div class="n8n-builder-input-area">
+            <textarea id="n8n-builder-input" placeholder="Enter your request" rows="2"></textarea>
+            <button id="n8n-builder-send">Send</button>
+        </div>
+        <div class="n8n-builder-footer">
+            <div class="n8n-builder-status">
+                <span id="n8n-api-status" class="status-indicator"></span>
+                <span id="n8n-api-status-text">API Status</span>
+            </div>
+            <button id="n8n-builder-clear" title="Clear Chat" class="n8n-builder-clear-btn">Clear</button>
+            <button id="n8n-builder-history" title="View Chat History" class="n8n-builder-clear-btn">History</button>
+        </div>
+        
+        <!-- Chat History Modal -->
+        <div id="n8n-builder-history-modal" class="n8n-builder-modal">
+            <div class="n8n-builder-modal-content">
+                <span id="n8n-builder-close-history" class="n8n-builder-close">&times;</span>
+                <h2>Chat History</h2>
+                <div id="n8n-builder-history-container">
+                    <!-- Chat history will be loaded here -->
+                </div>
+                <div id="n8n-builder-history-controls">
+                    <button id="n8n-builder-prev-conv">Previous</button>
+                    <button id="n8n-builder-next-conv">Next</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Include the JavaScript files -->
+    <script src="chatbot.js"></script>
+    <script src="modules/chatbot-ui.js"></script>
+
+    <script>
+        function setupTestData() {
+            // Create test conversation data
+            const testConversations = [
+                {
+                    role: 'user',
+                    content: 'How do I create a workflow in n8n?',
+                    timestamp: new Date('2024-01-01').toISOString()
+                },
+                {
+                    role: 'assistant',
+                    content: 'To create a workflow in n8n, you can start by clicking the "+" button to add nodes...',
+                    timestamp: new Date('2024-01-01').toISOString()
+                },
+                {
+                    role: 'user',
+                    content: 'What are the best practices for error handling?',
+                    timestamp: new Date('2024-01-02').toISOString()
+                },
+                {
+                    role: 'assistant',
+                    content: 'For error handling in n8n, I recommend using the Error Trigger node and implementing retry logic...',
+                    timestamp: new Date('2024-01-02').toISOString()
+                },
+                {
+                    role: 'user',
+                    content: 'How can I schedule workflows?',
+                    timestamp: new Date('2024-01-03').toISOString()
+                },
+                {
+                    role: 'assistant',
+                    content: 'You can schedule workflows using the Cron node or the Schedule Trigger node...',
+                    timestamp: new Date('2024-01-03').toISOString()
+                }
+            ];
+
+            // Set up the test data
+            window.chatMemory = testConversations;
+            window.MAX_CONVERSATIONS = 5;
+
+            // Save to storage
+            if (typeof setCookie === 'function') {
+                setCookie('n8n-copilot-chat-memory', JSON.stringify(testConversations), 7);
+            }
+
+            document.getElementById('results-output').innerHTML = 
+                `<p>✅ Test data setup complete. Created ${testConversations.length} messages in chat memory.</p>`;
+            
+            console.log('Test data setup:', testConversations);
+        }
+
+        function clearTestData() {
+            window.chatMemory = [];
+            if (typeof setCookie === 'function') {
+                setCookie('n8n-copilot-chat-memory', '[]', 7);
+            }
+            document.getElementById('results-output').innerHTML = 
+                '<p>🗑️ Test data cleared.</p>';
+        }
+
+        // Initialize the chat history functionality when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            // Wait a bit for all scripts to load
+            setTimeout(function() {
+                if (typeof initChatHistory === 'function') {
+                    initChatHistory();
+                    document.getElementById('results-output').innerHTML =
+                        '<p>📋 Chat history functionality initialized. Click "Setup Test Data" to create sample conversations.</p>';
+                } else {
+                    document.getElementById('results-output').innerHTML =
+                        '<p>❌ Error: Chat history functions not available. Available functions: ' +
+                        Object.keys(window).filter(key => key.includes('Chat') || key.includes('History')).join(', ') + '</p>';
+                }
+            }, 100);
+        });
+    </script>
+</body>
+</html>

@@ -4,16 +4,16 @@
   "description": "AI assistant for building n8n workflows",
   "manifest_version": 3,
   "icons": {
-    "16": "action/icons/icon16.png",
-    "48": "action/icons/icon48.png",
-    "128": "action/icons/icon128.png"
+    "16": "assets/icons/icon16.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
   },
   "action": {
     "default_popup": "action/popup.html",
     "default_icon": {
-      "16": "action/icons/icon16.png",
-      "48": "action/icons/icon48.png",
-      "128": "action/icons/icon128.png"
+      "16": "assets/icons/icon16.png",
+      "48": "assets/icons/icon48.png",
+      "128": "assets/icons/icon128.png"
     }
   },
   "permissions": [
@@ -32,7 +32,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["dom/content.js"]
+      "js": ["content-scripts/content.js"]
     }
   ],
   "web_accessible_resources": [
@@ -41,12 +41,13 @@
         "chatbot/chatbot.js",
         "chatbot/chatbot.css",
         "chatbot/chatbot.html",
-        "action/icons/chat-icon-48.png",
+        "assets/icons/chat-icon-48.png",
         "action/styles.css",
         "action/settings/settings.css",
         "chatbot/modules/chatbot-ui.js",
         "chatbot/modules/chatbot-api.js",
-        "chatbot/modules/chatbot-workflow.js"
+        "chatbot/modules/chatbot-workflow.js",
+        "chatbot/modules/chatbot-openai.js"
       ],
       "matches": ["<all_urls>"]
     }

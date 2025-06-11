@@ -3,42 +3,133 @@ console.log('content.js loaded');
 // Cache for extension resource URLs
 const resourceURLCache = {};
 
+// Extension context validation
+function isExtensionContextValid() {
+  try {
+    return !!(chrome && chrome.runtime && chrome.runtime.getURL);
+  } catch (error) {
+    console.warn('Extension context validation failed:', error);
+    return false;
+  }
+}
+
+// Safe chrome.runtime.getURL wrapper
+function safeGetURL(path) {
+  try {
+    if (!isExtensionContextValid()) {
+      console.warn('Extension context invalidated, cannot get URL for:', path);
+      return null;
+    }
+    return chrome.runtime.getURL(path);
+  } catch (error) {
+    console.error('Error getting extension URL for', path, ':', error);
+    return null;
+  }
+}
+
 // Inject the chatbot icon script on all pages
 function injectChatbotScript() {
-  // Check if chatbot scripts are already loaded
-  if (!document.getElementById('n8n-builder-chatbot-script')) {
-    // Inject chatbot modules and main script in order
-    const scriptsToInject = [
-      'chatbot/modules/chatbot-ui.js',
-      'chatbot/modules/chatbot-api.js',
-      'chatbot/modules/chatbot-workflow.js',
-      'chatbot/chatbot.js'
-    ];
-
-    scriptsToInject.forEach(scriptPath => {
-      const script = document.createElement('script');
-      script.src = chrome.runtime.getURL(scriptPath);
-      // Use a consistent ID pattern for all injected scripts
-      script.id = `n8n-builder-${scriptPath.replace(/\//g, '-')}`;
-      document.head.appendChild(script);
-      console.log(`${scriptPath} injected`);
-    });
+  // Check if any chatbot scripts are already loaded
+  if (document.getElementById('n8n-builder-chatbot-chatbot-js')) {
+    console.log('Chatbot scripts already injected, skipping...');
+    return;
   }
+  
+  // Check if extension context is valid before proceeding
+  if (!isExtensionContextValid()) {
+    console.warn('Extension context invalidated, cannot inject chatbot scripts');
+    return;
+  }
+  
+  // Initialize chatMemory before injecting scripts
+  window.chatMemory = window.chatMemory || [];
+
+  // Inject chatbot modules and main script in order
+  const scriptsToInject = [
+    'chatbot/modules/chatbot-ui.js',
+    'chatbot/modules/chatbot-api.js',
+    'chatbot/modules/chatbot-workflow.js',
+    'chatbot/modules/chatbot-openai.js',
+    'chatbot/chatbot.js'
+  ];
+
+  scriptsToInject.forEach(scriptPath => {
+    const scriptId = `n8n-builder-${scriptPath.replace(/\//g, '-').replace(/\./g, '-')}`;
+    
+    // Check if this specific script is already injected
+    if (!document.getElementById(scriptId)) {
+      const scriptUrl = safeGetURL(scriptPath);
+      if (scriptUrl) {
+        const script = document.createElement('script');
+        script.src = scriptUrl;
+        script.id = scriptId;
+        document.head.appendChild(script);
+        console.log(`${scriptPath} injected`);
+      } else {
+        console.warn(`Failed to get URL for script: ${scriptPath}`);
+      }
+    } else {
+      console.log(`${scriptPath} already exists, skipping...`);
+    }
+  });
 }
 
 // Get all required resource URLs
 function getResourceURLs() {
-  return {
-    'chatbot/chatbot.css': chrome.runtime.getURL('chatbot/chatbot.css'),
-    'chatbot/chatbot.html': chrome.runtime.getURL('chatbot/chatbot.html'),
-    'action/icons/chat-icon-48.png': chrome.runtime.getURL('action/icons/chat-icon-48.png')
-  };
+  if (!isExtensionContextValid()) {
+    console.warn('Extension context invalidated, cannot get resource URLs');
+    return {};
+  }
+  
+  const resources = {};
+  const resourcePaths = [
+    'chatbot/chatbot.css',
+    'chatbot/chatbot.html',
+    'action/icons/chat-icon-48.png'
+  ];
+  
+  resourcePaths.forEach(path => {
+    const url = safeGetURL(path);
+    if (url) {
+      resources[path] = url;
+    } else {
+      console.warn(`Failed to get URL for resource: ${path}`);
+    }
+  });
+  
+  return resources;
 }
 
 // Fetch content of a file
 function fetchResource(path) {
-  return fetch(chrome.runtime.getURL(path))
-    .then(response => response.text());
+console.log('fetchResource called with path:', path); // Temp debug
+  return new Promise((resolve, reject) => {
+    if (!isExtensionContextValid()) {
+      console.warn('Extension context invalidated, cannot fetch resource:', path);
+      reject(new Error('Extension context invalidated'));
+      return;
+    }
+    
+    const url = safeGetURL(path);
+    if (!url) {
+      console.error('Failed to get URL for resource:', path);
+      reject(new Error(`Failed to get URL for resource: ${path}`));
+      return;
+    }
+    
+    fetch(url)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.text();
+      })
+      .then(text => resolve(text))
+      .catch(error => {
+        console.error('Error fetching resource:', path, error);
+        reject(error);
+      });
+  });
 }
 
 // Cache and debounce mechanism
@@ -278,15 +369,28 @@ function setupCommunicationBridge() {
         break;
 
       case 'getResourceURL':
-        const url = chrome.runtime.getURL(data.path);
-        resourceURLCache[data.path] = url;
-        window.dispatchEvent(new CustomEvent('n8nCopilotContentEvent', {
-          detail: {
-            type: 'resourceURL',
-            path: data.path,
-            url: url
-          }
-        }));
+        const url = safeGetURL(data.path);
+        if (url) {
+          resourceURLCache[data.path] = url;
+          console.log('Content script: Sending resource URL to injected script:', data.path, url);
+          window.dispatchEvent(new CustomEvent('n8nCopilotContentEvent', {
+            detail: {
+              type: 'resourceURL',
+              path: data.path,
+              url: url
+            }
+          }));
+        } else {
+          console.warn('Content script: Failed to get resource URL for:', data.path);
+          window.dispatchEvent(new CustomEvent('n8nCopilotContentEvent', {
+            detail: {
+              type: 'resourceURL',
+              path: data.path,
+              url: null,
+              error: 'Extension context invalidated'
+            }
+          }));
+        }
         break;
 
       case 'proxyFetch':
@@ -331,17 +435,48 @@ function setupCommunicationBridge() {
         break;
 
       case 'getChatHtml':
-        const html = await fetchResource('chatbot/chatbot.html');
-        window.dispatchEvent(new CustomEvent('n8nCopilotContentEvent', {
-          detail: {
-            type: 'chatHtml',
-            html: html
-          }
-        }));
-        // If a callback was specified, call it with the HTML
-        if (data.callback && window[data.callback]) {
-          window[data.callback](html);
-        }
+        const html = await fetchResource('chatbot/chatbot.html')
+          .then(html => {
+            try {
+              window.dispatchEvent(new CustomEvent('n8nCopilotContentEvent', {
+                detail: {
+                  type: 'chatHtml',
+                  html: html
+                }
+              }));
+              // If a callback was specified, call it with the HTML
+              if (data.callback && window[data.callback]) {
+                window[data.callback](html);
+              }
+            } catch (error) {
+              console.error('Content script: Error processing chat HTML:', error);
+              window.dispatchEvent(new CustomEvent('n8nCopilotContentEvent', {
+                detail: {
+                  type: 'chatHtml',
+                  html: null,
+                  error: error.message
+                }
+              }));
+              // If a callback was specified, call it with null to indicate failure
+              if (data.callback && window[data.callback]) {
+                window[data.callback](null);
+              }
+            }
+          })
+          .catch(error => {
+            console.error('Content script: Error fetching chat HTML:', error);
+            window.dispatchEvent(new CustomEvent('n8nCopilotContentEvent', {
+              detail: {
+                type: 'chatHtml',
+                html: null,
+                error: error.message
+              }
+            }));
+            // If a callback was specified, call it with null to indicate failure
+            if (data.callback && window[data.callback]) {
+              window[data.callback](null);
+            }
+          });
         break;
 
       case 'getWorkflowData':

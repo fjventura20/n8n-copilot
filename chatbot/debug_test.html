@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>n8n Copilot Debug Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .debug-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .button:hover {
+            background-color: #0056b3;
+        }
+        .button.secondary {
+            background-color: #6c757d;
+        }
+        .button.secondary:hover {
+            background-color: #545b62;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .log-output {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .instructions {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 n8n Copilot Debug Test Suite</h1>
+        
+        <div class="instructions">
+            <h3>📋 Instructions:</h3>
+            <ol>
+                <li>This page loads the debug modules and simulates the chatbot environment</li>
+                <li>Use the buttons below to test different debugging scenarios</li>
+                <li>Check the browser console for detailed debug output</li>
+                <li>The log output below shows a summary of debug operations</li>
+            </ol>
+        </div>
+
+        <div id="status" class="status info">
+            Loading debug modules...
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>💬 Chat History Debugging</h2>
+        <div class="debug-section">
+            <h3>Chat History Debug Functions</h3>
+            <button class="button" onclick="runChatHistoryDebug()">🔍 Run Full Chat History Debug</button>
+            <button class="button secondary" onclick="debugChatLoading()">📥 Debug Loading Only</button>
+            <button class="button secondary" onclick="debugChatRendering()">🎨 Debug Rendering Only</button>
+            <button class="button secondary" onclick="debugChatPersistence()">💾 Debug Persistence Only</button>
+            <button class="button secondary" onclick="getChatDebugReport()">📊 Get Debug Report</button>
+        </div>
+        
+        <div id="chat-debug-output" class="log-output">
+            Chat history debug output will appear here...
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>⚙️ Workflow Creation Debugging</h2>
+        <div class="debug-section">
+            <h3>Workflow Debug Functions</h3>
+            <button class="button" onclick="runWorkflowDebug()">🔍 Run Full Workflow Debug</button>
+            <button class="button secondary" onclick="debugWorkflowInit()">🚀 Debug Initialization Only</button>
+            <button class="button secondary" onclick="debugWorkflowJson()">📄 Debug JSON Processing</button>
+            <button class="button secondary" onclick="debugWorkflowApi()">🌐 Debug API Communication</button>
+            <button class="button secondary" onclick="debugWorkflowCanvas()">🎯 Debug Canvas Injection</button>
+            <button class="button secondary" onclick="getWorkflowDebugReport()">📊 Get Debug Report</button>
+        </div>
+        
+        <div id="workflow-debug-output" class="log-output">
+            Workflow debug output will appear here...
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>🧪 Test Environment Setup</h2>
+        <div class="debug-section">
+            <h3>Environment Simulation</h3>
+            <button class="button" onclick="setupTestEnvironment()">🔧 Setup Test Environment</button>
+            <button class="button secondary" onclick="simulateChatHistory()">💬 Simulate Chat History</button>
+            <button class="button secondary" onclick="simulateWorkflowData()">⚙️ Simulate Workflow Data</button>
+            <button class="button secondary" onclick="clearTestData()">🗑️ Clear Test Data</button>
+        </div>
+        
+        <div id="environment-status" class="log-output">
+            Environment status will appear here...
+        </div>
+    </div>
+
+    <!-- Load the debug modules -->
+    <script src="debug_chat_history.js"></script>
+    <script src="debug_workflow_creation.js"></script>
+
+    <script>
+        // Initialize test environment
+        let logOutput = '';
+        
+        function updateStatus(message, type = 'info') {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+        }
+
+        function appendLog(section, message) {
+            const outputEl = document.getElementById(`${section}-debug-output`);
+            const timestamp = new Date().toLocaleTimeString();
+            outputEl.textContent += `[${timestamp}] ${message}\n`;
+            outputEl.scrollTop = outputEl.scrollHeight;
+        }
+
+        function appendEnvironmentLog(message) {
+            const outputEl = document.getElementById('environment-status');
+            const timestamp = new Date().toLocaleTimeString();
+            outputEl.textContent += `[${timestamp}] ${message}\n`;
+            outputEl.scrollTop = outputEl.scrollHeight;
+        }
+
+        // Chat History Debug Functions
+        function runChatHistoryDebug() {
+            appendLog('chat', 'Starting full chat history debug suite...');
+            try {
+                if (typeof window.debugChatHistory === 'function') {
+                    const report = window.debugChatHistory();
+                    appendLog('chat', 'Full debug suite completed successfully');
+                    appendLog('chat', `Issues found: ${report?.issues?.length || 0}`);
+                } else {
+                    appendLog('chat', 'ERROR: debugChatHistory function not available');
+                }
+            } catch (error) {
+                appendLog('chat', `ERROR: ${error.message}`);
+            }
+        }
+
+        function debugChatLoading() {
+            appendLog('chat', 'Running chat history loading debug...');
+            try {
+                if (typeof window.debugChatHistoryLoading === 'function') {
+                    window.debugChatHistoryLoading();
+                    appendLog('chat', 'Loading debug completed');
+                } else {
+                    appendLog('chat', 'ERROR: debugChatHistoryLoading function not available');
+                }
+            } catch (error) {
+                appendLog('chat', `ERROR: ${error.message}`);
+            }
+        }
+
+        function debugChatRendering() {
+            appendLog('chat', 'Running chat history rendering debug...');
+            try {
+                if (typeof window.debugChatHistoryRendering === 'function') {
+                    window.debugChatHistoryRendering();
+                    appendLog('chat', 'Rendering debug completed');
+                } else {
+                    appendLog('chat', 'ERROR: debugChatHistoryRendering function not available');
+                }
+            } catch (error) {
+                appendLog('chat', `ERROR: ${error.message}`);
+            }
+        }
+
+        function debugChatPersistence() {
+            appendLog('chat', 'Running chat history persistence debug...');
+            try {
+                if (typeof window.debugChatHistoryPersistence === 'function') {
+                    window.debugChatHistoryPersistence();
+                    appendLog('chat', 'Persistence debug completed');
+                } else {
+                    appendLog('chat', 'ERROR: debugChatHistoryPersistence function not available');
+                }
+            } catch (error) {
+                appendLog('chat', `ERROR: ${error.message}`);
+            }
+        }
+
+        function getChatDebugReport() {
+            appendLog('chat', 'Generating chat history debug report...');
+            try {
+                if (typeof window.getChatHistoryDebugReport === 'function') {
+                    const report = window.getChatHistoryDebugReport();
+                    appendLog('chat', `Report generated - ${report.totalOperations} operations, ${report.issues.length} issues`);
+                    console.log('Chat History Debug Report:', report);
+                } else {
+                    appendLog('chat', 'ERROR: getChatHistoryDebugReport function not available');
+                }
+            } catch (error) {
+                appendLog('chat', `ERROR: ${error.message}`);
+            }
+        }
+
+        // Workflow Debug Functions
+        function runWorkflowDebug() {
+            appendLog('workflow', 'Starting full workflow debug suite...');
+            try {
+                if (typeof window.debugWorkflowCreation === 'function') {
+                    window.debugWorkflowCreation().then(report => {
+                        appendLog('workflow', 'Full debug suite completed successfully');
+                        appendLog('workflow', `Issues found: ${report?.issues?.length || 0}`);
+                    }).catch(error => {
+                        appendLog('workflow', `ERROR: ${error.message}`);
+                    });
+                } else {
+                    appendLog('workflow', 'ERROR: debugWorkflowCreation function not available');
+                }
+            } catch (error) {
+                appendLog('workflow', `ERROR: ${error.message}`);
+            }
+        }
+
+        function debugWorkflowInit() {
+            appendLog('workflow', 'Running workflow initialization debug...');
+            try {
+                if (typeof window.debugWorkflowInit === 'function') {
+                    window.debugWorkflowInit();
+                    appendLog('workflow', 'Initialization debug completed');
+                } else {
+                    appendLog('workflow', 'ERROR: debugWorkflowInit function not available');
+                }
+            } catch (error) {
+                appendLog('workflow', `ERROR: ${error.message}`);
+            }
+        }
+
+        function debugWorkflowJson() {
+            appendLog('workflow', 'Running workflow JSON debug...');
+            try {
+                if (typeof window.debugWorkflowJson === 'function') {
+                    window.debugWorkflowJson();
+                    appendLog('workflow', 'JSON debug completed');
+                } else {
+                    appendLog('workflow', 'ERROR: debugWorkflowJson function not available');
+                }
+            } catch (error) {
+                appendLog('workflow', `ERROR: ${error.message}`);
+            }
+        }
+
+        function debugWorkflowApi() {
+            appendLog('workflow', 'Running workflow API debug...');
+            try {
+                if (typeof window.debugWorkflowApi === 'function') {
+                    window.debugWorkflowApi().then(() => {
+                        appendLog('workflow', 'API debug completed');
+                    }).catch(error => {
+                        appendLog('workflow', `API debug error: ${error.message}`);
+                    });
+                } else {
+                    appendLog('workflow', 'ERROR: debugWorkflowApi function not available');
+                }
+            } catch (error) {
+                appendLog('workflow', `ERROR: ${error.message}`);
+            }
+        }
+
+        function debugWorkflowCanvas() {
+            appendLog('workflow', 'Running workflow canvas debug...');
+            try {
+                if (typeof window.debugWorkflowCanvas === 'function') {
+                    window.debugWorkflowCanvas();
+                    appendLog('workflow', 'Canvas debug completed');
+                } else {
+                    appendLog('workflow', 'ERROR: debugWorkflowCanvas function not available');
+                }
+            } catch (error) {
+                appendLog('workflow', `ERROR: ${error.message}`);
+            }
+        }
+
+        function getWorkflowDebugReport() {
+            appendLog('workflow', 'Generating workflow debug report...');
+            try {
+                if (typeof window.getWorkflowCreationDebugReport === 'function') {
+                    const report = window.getWorkflowCreationDebugReport();
+                    appendLog('workflow', `Report generated - ${report.totalOperations} operations, ${report.issues.length} issues`);
+                    console.log('Workflow Debug Report:', report);
+                } else {
+                    appendLog('workflow', 'ERROR: getWorkflowCreationDebugReport function not available');
+                }
+            } catch (error) {
+                appendLog('workflow', `ERROR: ${error.message}`);
+            }
+        }
+
+        // Environment Setup Functions
+        function setupTestEnvironment() {
+            appendEnvironmentLog('Setting up test environment...');
+            
+            // Simulate global variables
+            window.chatMemory = [];
+            window.MAX_CONVERSATIONS = 5;
+            window.n8nApiUrl = 'https://localhost:5678';
+            window.n8nApiKey = 'test-api-key';
+            
+            // Mock functions
+            window.setCookie = function(name, value, days) {
+                document.cookie = `${name}=${value}; max-age=${days * 24 * 60 * 60}; path=/`;
+                console.log('Mock setCookie called:', name, value);
+            };
+            
+            window.getCookie = function(name) {
+                const value = `; ${document.cookie}`;
+                const parts = value.split(`; ${name}=`);
+                if (parts.length === 2) return parts.pop().split(';').shift();
+                return null;
+            };
+            
+            // Create mock DOM elements
+            if (!document.getElementById('n8n-builder-messages')) {
+                const messagesArea = document.createElement('div');
+                messagesArea.id = 'n8n-builder-messages';
+                messagesArea.style.display = 'none';
+                document.body.appendChild(messagesArea);
+            }
+            
+            appendEnvironmentLog('Test environment setup completed');
+            updateStatus('Test environment ready', 'success');
+        }
+
+        function simulateChatHistory() {
+            appendEnvironmentLog('Simulating chat history...');
+            
+            window.chatMemory = [
+                { role: 'user', content: 'Hello, can you help me create a workflow?' },
+                { role: 'assistant', content: 'Of course! I can help you create n8n workflows. What would you like to automate?' },
+                { role: 'user', content: 'I want to send emails when new files are uploaded' },
+                { role: 'assistant', content: 'Great! I can create a workflow that triggers on file uploads and sends email notifications.' }
+            ];
+            
+            // Save to cookie
+            if (typeof window.setCookie === 'function') {
+                window.setCookie('n8n-copilot-chat-memory', JSON.stringify(window.chatMemory), 7);
+            }
+            
+            appendEnvironmentLog(`Simulated ${window.chatMemory.length} chat messages`);
+        }
+
+        function simulateWorkflowData() {
+            appendEnvironmentLog('Simulating workflow data...');
+            
+            // Mock workflow JSON
+            window.testWorkflowJson = {
+                name: "Test Email Notification Workflow",
+                nodes: [
+                    {
+                        name: "File Trigger",
+                        type: "n8n-nodes-base.filesTrigger",
+                        position: [100, 100],
+                        parameters: {
+                            path: "/uploads"
+                        }
+                    },
+                    {
+                        name: "Send Email",
+                        type: "n8n-nodes-base.emailSend",
+                        position: [300, 100],
+                        parameters: {
+                            to: "admin@example.com",
+                            subject: "New file uploaded"
+                        }
+                    }
+                ],
+                connections: {
+                    "File Trigger": {
+                        "main": [
+                            [
+                                {
+                                    "node": "Send Email",
+                                    "type": "main",
+                                    "index": 0
+                                }
+                            ]
+                        ]
+                    }
+                }
+            };
+            
+            appendEnvironmentLog('Workflow data simulation completed');
+        }
+
+        function clearTestData() {
+            appendEnvironmentLog('Clearing test data...');
+            
+            window.chatMemory = [];
+            window.testWorkflowJson = null;
+            
+            // Clear cookies
+            document.cookie = 'n8n-copilot-chat-memory=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+            
+            // Clear DOM
+            const messagesArea = document.getElementById('n8n-builder-messages');
+            if (messagesArea) {
+                messagesArea.innerHTML = '';
+            }
+            
+            appendEnvironmentLog('Test data cleared');
+        }
+
+        // Initialize on page load
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                if (window.chatHistoryDebugger && window.workflowCreationDebugger) {
+                    updateStatus('Debug modules loaded successfully', 'success');
+                    appendEnvironmentLog('Chat History Debugger: Available');
+                    appendEnvironmentLog('Workflow Creation Debugger: Available');
+                    appendEnvironmentLog('Ready for testing!');
+                } else {
+                    updateStatus('Error: Debug modules failed to load', 'error');
+                    appendEnvironmentLog('ERROR: One or more debug modules failed to load');
+                }
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

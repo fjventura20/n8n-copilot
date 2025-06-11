@@ -45,6 +45,15 @@ To get started with n8n Copilot, follow these steps:
 Once the application is running, you can start creating and editing workflows using natural language commands. Here are some examples:
 
 - **Create a new workflow:**
+  ```plaintext
+  Create a workflow that sends an email when a new GitHub issue is created.
+  ```
+
+- **Edit an existing workflow:**
+  ```plaintext
+  Add a step to the workflow that logs the issue details.
+  ```
+
 ## ⚙️ Configuration
 To configure the AI providers and n8n integration, follow these steps:
 
@@ -67,14 +76,6 @@ To configure the AI providers and n8n integration, follow these steps:
 
 6. **Save Settings:**
    Click on the "Save Settings" button to save your configuration.
-  ```plaintext
-  Create a workflow that sends an email when a new GitHub issue is created.
-  ```
-
-- **Edit an existing workflow:**
-  ```plaintext
-  Add a step to the workflow that logs the issue details.
-  ```
 
 ## 🔧 Load the Extension
 To load the n8n Copilot extension into n8n, follow these steps:
@@ -110,3 +111,9 @@ If you like the project and want to keep it going, you can chip in here:
 
 ## 📄 License
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## 📚 Project Documentation
+For more detailed information about the project, its components, and technical preferences, please refer to the following documents:
+
+- [Project Overview](docs/project-overview.md): A high-level overview of the project, its components, and how they fit into the BMAD Method.
+- [Technical Preferences](bmad-agent/data/technical-preferences.txt): Preferred programming languages, frameworks, coding patterns, and best practices for the project.

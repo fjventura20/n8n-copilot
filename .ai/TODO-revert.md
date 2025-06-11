@@ -1,0 +1,27 @@
+## Temp Debug Changes
+
+- File: chatbot/modules/chatbot-workflow.js
+  - Description: Updated regex in extractJsonFromResponse function to be more robust.
+  - Rationale: To handle variations in OpenAI's JSON formatting.
+  - Expected Outcome: Extract JSON even with surrounding text or formatting inconsistencies.
+  - Status: Reverted
+- File: chatbot/modules/chatbot-openai.js
+  - Description: Added console.log to log assistantMessage for debugging.
+  - Rationale: To inspect the raw response from OpenAI and identify potential formatting issues.
+  - Expected Outcome: Log the assistantMessage to the console when creating a merge node.
+  - Status: Reverted
+- File: content-scripts/content.js
+  - Description: Added console.log to log path parameter in fetchResource function.
+  - Rationale: To confirm that the fetchResource function is being called with the correct path.
+  - Expected Outcome: Log the path parameter to the console.
+  - Status: Applied
+- File: content-scripts/content.js
+  - Description: Modified getChatHtml case to handle asynchronous fetchResource correctly.
+  - Rationale: To prevent ReferenceError: html is not defined.
+  - Expected Outcome: Chatbot displays correctly.
+  - Status: Applied
+- File: chatbot/modules/chatbot-ui.js
+  - Description: Added console.log to log sender and text parameters of addMessage function.
+  - Rationale: To confirm that the addMessage function is being called with the correct parameters.
+  - Expected Outcome: Log the sender and text parameters to the console when a message is added.
+  - Status: Reverted
