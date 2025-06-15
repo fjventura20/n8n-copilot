@@ -145,6 +145,12 @@
 
   // Load chat history on startup
   loadChatHistoryUnified();
+
+  // Save chat history to cookies whenever it changes
+  window.addEventListener('chatMemoryUpdated', () => {
+    const cookieKey = 'n8n-copilot-chat-memory';
+    setCookie(cookieKey, JSON.stringify(window.chatMemory), 7);
+  });
   
   let chatMemory = window.chatMemory;
   const MAX_CONVERSATIONS = window.MAX_CONVERSATIONS;
@@ -315,6 +321,12 @@ Feel free to ask me anything about n8n - I'm here to help! 🚀`);
 
   // Get n8n page status, resource URLs, and settings
   function initialize() {
+    if (typeof loadChatHistoryUnified !== 'function') {
+      console.warn('loadChatHistoryUnified not yet available, delaying initialization');
+      setTimeout(initialize, 50); // Try again after 50ms
+      return;
+    }
+
     sendToContentScript({ type: 'getResourceURLs' });
     sendToContentScript({ type: 'getSettings' });
 

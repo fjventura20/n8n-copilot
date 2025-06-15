@@ -1,341 +1,584 @@
 // chatbot/modules/chatbot-ui.js
-  
-  // Use global chat memory and MAX_CONVERSATIONS
-  // Access via window object to avoid redeclaration issues
-  
-  // Inject chat CSS if not already present
-  function injectChatStyles() {
-    if (typeof window.sendToContentScript === 'function') {
-      window.sendToContentScript({ type: 'getResourceURL', path: 'chatbot/chatbot.css' });
-    } else {
-      console.error('sendToContentScript function not available');
-    }
+// UI management module - handles chat interface with optimized rendering and enhanced history
+
+// Use global chat memory and MAX_CONVERSATIONS
+// Access via window object to avoid redeclaration issues
+
+// Global notification system
+window.showNotification = window.showNotification || function(message, type = 'info') {
+  showMiniToast(message);
+};
+
+// Inject chat CSS if not already present
+function injectChatStyles() {
+  if (typeof window.sendToContentScript === 'function') {
+    window.sendToContentScript({ type: 'getResourceURL', path: 'chatbot/chatbot.css' });
+  } else {
+    console.error('sendToContentScript function not available');
   }
+}
+
+// Create a mini toast notification
+function showMiniToast(message) {
+  const toast = document.createElement('div');
+  toast.className = 'n8n-builder-mini-toast';
+  toast.textContent = message;
+  document.body.appendChild(toast);
   
-  // Create a mini toast notification
-  function showMiniToast(message) {
-    const toast = document.createElement('div');
-    toast.className = 'n8n-builder-mini-toast';
-    toast.textContent = message;
-    document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('show');
     
     setTimeout(() => {
-      toast.classList.add('show');
-      
-      setTimeout(() => {
-        toast.classList.remove('show');
-        setTimeout(() => toast.remove(), 300);
-      }, 3000);
-    }, 10);
-  }
-  
-  // Toggle chat visibility
-  function toggleChat() {
-    console.log('toggleChat called');
-    const existingChat = document.getElementById('n8n-builder-chat');
-    if (existingChat) {
-      console.log('Removing existing chat');
-      existingChat.remove();
+      toast.classList.remove('show');
+      setTimeout(() => toast.remove(), 300);
+    }, 3000);
+  }, 10);
+}
+
+// Toggle chat visibility
+function toggleChat() {
+  console.log('toggleChat called');
+  const existingChat = document.getElementById('n8n-builder-chat');
+  if (existingChat) {
+    console.log('Removing existing chat');
+    existingChat.remove();
+  } else {
+    if (isN8nPage()) {
+      initChatbot();
     } else {
-      if (isN8nPage()) {
-        initChatbot();
-      } else {
-        console.log('Not an n8n page, chat not opened.');
-        // Optionally, provide user feedback that this feature is only for n8n pages.
-        showMiniToast('This feature is for n8n pages only.');
-      }
+      console.log('Not an n8n page, chat not opened.');
+      showMiniToast('This feature is for n8n pages only.');
     }
   }
+}
+
+// Inject chat HTML
+function injectChatHtml(callback) {
+  if (typeof window.sendToContentScript === 'function') {
+    window.sendToContentScript({
+      type: 'getChatHtml',
+      callback: 'processChatHtml'
+    });
+  } else {
+    console.error('sendToContentScript function not available');
+  }
   
-  // Inject chat HTML
-  function injectChatHtml(callback) {
-    // Request the HTML from the content script
-    // Use the global sendToContentScript function
-    if (typeof window.sendToContentScript === 'function') {
-      window.sendToContentScript({
-        type: 'getChatHtml',
-        callback: 'processChatHtml'
-      });
-    } else {
-      console.error('sendToContentScript function not available');
-    }
+  // Store the callback to be called later
+  window.processChatHtml = function(html) {
+    const existingOverlay = document.getElementById('n8n-builder-chat');
+    if (existingOverlay) existingOverlay.remove();
     
-    // Store the callback to be called later
-    window.processChatHtml = function(html) {
-      const existingOverlay = document.getElementById('n8n-builder-chat');
-      if (existingOverlay) existingOverlay.remove();
-      
-      // Handle case where extension context is invalidated
-      if (!html) {
-        console.warn('Chat HTML not available - extension context may be invalidated');
-        showMiniToast('Extension needs to be reloaded. Please refresh the page.');
-        if (callback) callback();
-        return;
-      }
-      
-      try {
-        // Create a proper DOM element from the HTML string
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = html.trim();
-        
-        // Append the first child (should be the chat container) to the document body
-        const chatElement = tempDiv.firstElementChild;
-        if (chatElement) {
-          document.body.appendChild(chatElement);
-          console.log('Chat HTML injected successfully');
-        } else {
-          console.error('Failed to parse chat HTML', html);
-          showMiniToast('Failed to load chat interface');
-        }
-      } catch (error) {
-        console.error('Error processing chat HTML:', error);
-        showMiniToast('Error loading chat interface');
-      }
-      
+    // Handle case where extension context is invalidated
+    if (!html) {
+      console.warn('Chat HTML not available - extension context may be invalidated');
+      showMiniToast('Extension needs to be reloaded. Please refresh the page.');
       if (callback) callback();
-    };
-  }
-  
-  // Add a message to the chat (UI operation only)
-  function addMessage(sender, text, saveToMemory = true) {
-    // DEBUG: Call chat history debugger if available
-    if (window.chatHistoryDebugger) {
-      window.chatHistoryDebugger.log('addMessage called', 'debug', {
-        sender,
-        textLength: text?.length || 0,
-        saveToMemory
-      });
-    }
-    
-    // UI Operation: Add message to DOM
-    const success = addMessageToUI(sender, text);
-    if (!success) {
       return;
     }
     
-    // Data Operation: Save to memory if requested
-    if (saveToMemory && window.chatDataManager) {
-      const message = {
-        role: sender === 'user' ? 'user' : 'assistant',
-        content: text
-      };
+    try {
+      // Create a proper DOM element from the HTML string
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = html.trim();
       
-      // Use atomic data manager for persistence
-      try {
-        window.chatDataManager.addMessage(message)
-          .then(() => {
-            console.log('Message saved to memory:', message);
-          })
-          .catch(error => {
-            console.error('Failed to save message to memory:', error);
-            
-            // DEBUG: Log persistence error
-            if (window.chatHistoryDebugger) {
-              window.chatHistoryDebugger.log('Data persistence error', 'error', error.message);
-            }
-          });
-      } catch (e) {
-        console.error('Error in addMessage:', e);
+      // Append the first child (should be the chat container) to the document body
+      const chatElement = tempDiv.firstElementChild;
+      if (chatElement) {
+        document.body.appendChild(chatElement);
+        console.log('Chat HTML injected successfully');
+      } else {
+        console.error('Failed to parse chat HTML', html);
+        showMiniToast('Failed to load chat interface');
       }
+    } catch (error) {
+      console.error('Error processing chat HTML:', error);
+      showMiniToast('Error loading chat interface');
     }
+    
+    if (callback) callback();
+  };
+}
+
+// Diffing algorithm for optimized UI updates
+class MessageDiffer {
+  constructor() {
+    this.lastRenderedMessages = [];
   }
-  
-  // Separated UI operation for adding message to DOM
-  function addMessageToUI(sender, text) {
-    const messagesArea = document.getElementById('n8n-builder-messages');
-    if (!messagesArea) {
-      // DEBUG: Log missing messages area
-      if (window.chatHistoryDebugger) {
-        window.chatHistoryDebugger.log('Messages area not found', 'error');
+
+  // Calculate diff between current and new messages
+  calculateDiff(newMessages) {
+    const operations = [];
+    const oldLength = this.lastRenderedMessages.length;
+    const newLength = newMessages.length;
+
+    // Simple append-only optimization for chat messages
+    if (newLength > oldLength) {
+      // Check if existing messages are unchanged
+      let unchanged = true;
+      for (let i = 0; i < oldLength; i++) {
+        if (!this.messagesEqual(this.lastRenderedMessages[i], newMessages[i])) {
+          unchanged = false;
+          break;
+        }
       }
-      return false;
+
+      if (unchanged) {
+        // Only append new messages
+        for (let i = oldLength; i < newLength; i++) {
+          operations.push({
+            type: 'append',
+            message: newMessages[i],
+            index: i
+          });
+        }
+      } else {
+        // Full re-render needed
+        operations.push({ type: 'full-render', messages: newMessages });
+      }
+    } else if (newLength < oldLength) {
+      // Messages were removed - full re-render
+      operations.push({ type: 'full-render', messages: newMessages });
+    } else if (newLength === oldLength) {
+      // Check for modifications
+      let hasChanges = false;
+      for (let i = 0; i < newLength; i++) {
+        if (!this.messagesEqual(this.lastRenderedMessages[i], newMessages[i])) {
+          hasChanges = true;
+          operations.push({
+            type: 'update',
+            message: newMessages[i],
+            index: i
+          });
+        }
+      }
+
+      if (!hasChanges) {
+        // No changes needed
+        return [];
+      }
     }
-    
-    // DEBUG: Log DOM state before adding message
-    if (window.chatHistoryDebugger) {
-      window.chatHistoryDebugger.log('DOM state before message add', 'debug', {
-        existingChildren: messagesArea.children.length,
-        scrollHeight: messagesArea.scrollHeight,
-        scrollTop: messagesArea.scrollTop
-      });
-    }
-    
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `n8n-builder-message ${sender}-message`;
-    messageDiv.innerHTML = `
-      <div class="message-avatar ${sender}-avatar"></div>
-      <div class="message-content">
-        ${text}
-      </div>
-    `;
-    messagesArea.appendChild(messageDiv);
-    messagesArea.scrollTop = messagesArea.scrollHeight;
-    
-    // DEBUG: Log DOM state after adding message
-    if (window.chatHistoryDebugger) {
-      window.chatHistoryDebugger.log('DOM state after message add', 'debug', {
-        newChildren: messagesArea.children.length,
-        scrollHeight: messagesArea.scrollHeight,
-        scrollTop: messagesArea.scrollTop
-      });
-    }
-    
+
+    this.lastRenderedMessages = [...newMessages];
+    return operations;
+  }
+
+  // Compare two messages for equality
+  messagesEqual(msg1, msg2) {
+    return msg1 && msg2 && 
+           msg1.role === msg2.role && 
+           msg1.content === msg2.content &&
+           msg1.timestamp === msg2.timestamp;
+  }
+
+  // Reset differ state
+  reset() {
+    this.lastRenderedMessages = [];
+  }
+}
+
+// Global message differ instance
+window.messageDiffer = window.messageDiffer || new MessageDiffer();
+
+// Optimized message rendering with diffing
+function renderMessages(messages) {
+  const messagesArea = document.getElementById('n8n-builder-messages');
+  if (!messagesArea) return false;
+
+  const operations = window.messageDiffer.calculateDiff(messages);
+  
+  if (operations.length === 0) {
+    // No changes needed
     return true;
   }
-  
-  // Add loading indicator
-  function showLoadingIndicator() {
-    const messagesArea = document.getElementById('n8n-builder-messages');
-    if (!messagesArea) return;
-    
-    const loadingDiv = document.createElement('div');
-    loadingDiv.id = 'n8n-builder-loading';
-    loadingDiv.className = 'n8n-builder-message assistant-message loading';
-    loadingDiv.innerHTML = `
-      <div class="message-avatar assistant-avatar"></div>
-      <div class="message-content">
-        <div class="typing-indicator">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-      </div>
-    `;
-    messagesArea.appendChild(loadingDiv);
-    messagesArea.scrollTop = messagesArea.scrollHeight;
+
+  operations.forEach(op => {
+    switch (op.type) {
+      case 'append':
+        appendMessageToUI(op.message);
+        break;
+      case 'update':
+        updateMessageInUI(op.message, op.index);
+        break;
+      case 'full-render':
+        fullRenderMessages(op.messages);
+        break;
+    }
+  });
+
+  // Auto-scroll to bottom
+  messagesArea.scrollTop = messagesArea.scrollHeight;
+  return true;
+}
+
+// Append single message to UI (optimized)
+function appendMessageToUI(message) {
+  const messagesArea = document.getElementById('n8n-builder-messages');
+  if (!messagesArea) return false;
+
+  const messageDiv = createMessageElement(message);
+  messagesArea.appendChild(messageDiv);
+  return true;
+}
+
+// Update existing message in UI
+function updateMessageInUI(message, index) {
+  const messagesArea = document.getElementById('n8n-builder-messages');
+  if (!messagesArea) return false;
+
+  const existingMessage = messagesArea.children[index];
+  if (existingMessage) {
+    const newMessageDiv = createMessageElement(message);
+    messagesArea.replaceChild(newMessageDiv, existingMessage);
   }
-  
-  // Remove loading indicator
-  function removeLoadingIndicator() {
-    const loadingIndicator = document.getElementById('n8n-builder-loading');
-    if (loadingIndicator) {
-      loadingIndicator.remove();
-    }
-  }
-  
-  // Update the n8n page connection indicator
-  function updateN8nPageIndicator(status = null) {
-    const indicator = document.getElementById('n8n-builder-connection-indicator');
-    if (!indicator) return;
-    
-    if (status) {
-      indicator.className = `n8n-builder-connection-indicator ${status}`;
-      indicator.title = status.charAt(0).toUpperCase() + status.slice(1);
-    } else {
-      indicator.className = 'n8n-builder-connection-indicator';
-      indicator.title = 'Connection status';
-    }
-  }
-  
-  // Add connection status to the header
-  function addStatusToHeader(isConnected) {
-    const header = document.getElementById('n8n-builder-header');
-    if (!header) return;
-    
-    const statusDiv = document.createElement('div');
-    statusDiv.id = 'n8n-builder-connection-indicator';
-    statusDiv.className = `n8n-builder-connection-indicator ${isConnected ? 'connected' : 'disconnected'}`;
-    statusDiv.title = isConnected ? 'Connected' : 'Disconnected';
-    header.appendChild(statusDiv);
-  }
-  
-  // Set up event listeners
-  function setupEventListeners() {
-    const sendButton = document.getElementById('n8n-builder-send');
-    if (sendButton) {
-      sendButton.addEventListener('click', handleSendMessage);
-    }
-    
-    const inputField = document.getElementById('n8n-builder-input');
-    if (inputField) {
-      inputField.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          handleSendMessage();
-        }
-      });
-    }
-    
-    const closeButton = document.getElementById('n8n-builder-close');
-    if (closeButton) {
-      closeButton.addEventListener('click', () => {
-        const chat = document.getElementById('n8n-builder-chat');
-        if (chat) chat.remove();
-      });
-    }
-    
-    const minimizeButton = document.getElementById('n8n-builder-minimize');
-    if (minimizeButton) {
-      minimizeButton.addEventListener('click', () => {
-        const chat = document.getElementById('n8n-builder-chat');
-        if (chat) chat.remove();
-        // Show only the icon when minimized
-      });
-    }
-    
-    // Add clear button functionality
-    const clearButton = document.getElementById('n8n-builder-clear');
-    if (clearButton) {
-      clearButton.addEventListener('click', () => {
-        console.log('Clear button clicked - clearing UI only');
-        
-        // Clear displayed messages (UI only)
-        const messagesArea = document.getElementById('n8n-builder-messages');
-        if (messagesArea) {
-          messagesArea.innerHTML = '';
-          console.log('Chat interface cleared');
-        }
-        
-        // NOTE: Chat history is preserved in storage for conversation continuity
-        // Users can access previous conversations via the history feature
-        console.log('Chat interface cleared. History preserved for continuity.');
-      });
-    }
-  }
-  
-  // Initialize the chatbot
-  function initChatbot() {
-    // Inject the chat HTML
-    injectChatHtml(() => {
-      // Set up event listeners after HTML is injected
-      setupEventListeners();
-      
-      // Delay restoring chat history to allow localStorage to initialize
-      setTimeout(() => {
-        restoreChatHistory();
-      }, 500);
-      
-      // Test content script connection
-      testContentScriptConnection();
-      
-      // Add status indicator to header
-      addStatusToHeader(true);
-      
-      // Initialize chat history functionality
-      initChatHistory();
+  return true;
+}
+
+// Full re-render of all messages
+function fullRenderMessages(messages) {
+  const messagesArea = document.getElementById('n8n-builder-messages');
+  if (!messagesArea) return false;
+
+  messagesArea.innerHTML = '';
+  messages.forEach(message => {
+    const messageDiv = createMessageElement(message);
+    messagesArea.appendChild(messageDiv);
+  });
+  return true;
+}
+
+// Create message DOM element
+function createMessageElement(message) {
+  const messageDiv = document.createElement('div');
+  const sender = message.role === 'user' ? 'user' : 'assistant';
+  messageDiv.className = `n8n-builder-message ${sender}-message`;
+  messageDiv.innerHTML = `
+    <div class="message-avatar ${sender}-avatar"></div>
+    <div class="message-content">
+      ${message.content}
+    </div>
+  `;
+  return messageDiv;
+}
+
+// Add a message to the chat (enhanced with atomic operations)
+function addMessage(sender, text, saveToMemory = true) {
+  // DEBUG: Call chat history debugger if available
+  if (window.chatHistoryDebugger) {
+    window.chatHistoryDebugger.log('addMessage called', 'debug', {
+      sender,
+      textLength: text?.length || 0,
+      saveToMemory
     });
   }
   
-  // Load chat history from unified storage
-  function loadChatHistoryFromStorage() {
-    console.log('Loading chat history from unified storage...');
+  // Data Operation: Save to memory if requested (atomic)
+  if (saveToMemory && window.chatDataManager) {
+    const message = {
+      role: sender === 'user' ? 'user' : 'assistant',
+      content: text
+    };
     
-    // Check if getCookie is available in window scope
-    if (typeof window.getCookie === 'function') {
-      const cookieKey = 'n8n-copilot-chat-memory';
-      const stored = window.getCookie(cookieKey);
-      if (stored) {
-        try {
-          const parsedHistory = JSON.parse(stored);
-          if (Array.isArray(parsedHistory)) {
-            window.chatMemory = parsedHistory;
-            console.log('Loaded chat history from unified storage:', window.chatMemory.length, 'messages');
-            return true;
-          } else {
-            console.error('Invalid chat history format in unified storage');
-            return false;
-          }
-        } catch (error) {
-          console.error('Failed to parse chat history from unified storage:', error);
-          return false;
+    // Use atomic data manager for persistence
+    window.chatDataManager.addMessage(message)
+      .then(() => {
+        console.log('Message saved to memory:', message);
+        // Trigger UI update after successful save
+        refreshChatUI();
+      })
+      .catch(error => {
+        console.error('Failed to save message to memory:', error);
+        showMiniToast('Failed to save message');
+        
+        // DEBUG: Log persistence error
+        if (window.chatHistoryDebugger) {
+          window.chatHistoryDebugger.log('Data persistence error', 'error', error.message);
         }
+      });
+  } else {
+    // Direct UI update for non-persistent messages
+    const message = {
+      role: sender === 'user' ? 'user' : 'assistant',
+      content: text,
+      timestamp: new Date().toISOString()
+    };
+    appendMessageToUI(message);
+  }
+}
+
+// Refresh chat UI from current memory state
+function refreshChatUI() {
+  if (window.chatDataManager) {
+    const currentMemory = window.chatDataManager.getCurrentMemory();
+    renderMessages(currentMemory);
+  }
+}
+
+// Add loading indicator
+function showLoadingIndicator() {
+  const messagesArea = document.getElementById('n8n-builder-messages');
+  if (!messagesArea) return;
+  
+  const loadingDiv = document.createElement('div');
+  loadingDiv.id = 'n8n-builder-loading';
+  loadingDiv.className = 'n8n-builder-message assistant-message loading';
+  loadingDiv.innerHTML = `
+    <div class="message-avatar assistant-avatar"></div>
+    <div class="message-content">
+      <div class="typing-indicator">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </div>
+  `;
+  messagesArea.appendChild(loadingDiv);
+  messagesArea.scrollTop = messagesArea.scrollHeight;
+}
+
+// Remove loading indicator
+function removeLoadingIndicator() {
+  const loadingIndicator = document.getElementById('n8n-builder-loading');
+  if (loadingIndicator) {
+    loadingIndicator.remove();
+  }
+}
+
+// Update the n8n page connection indicator
+function updateN8nPageIndicator(status = null) {
+  const indicator = document.getElementById('n8n-builder-connection-indicator');
+  if (!indicator) return;
+  
+  if (status) {
+    indicator.className = `n8n-builder-connection-indicator ${status}`;
+    indicator.title = status.charAt(0).toUpperCase() + status.slice(1);
+  } else {
+    indicator.className = 'n8n-builder-connection-indicator';
+    indicator.title = 'Connection status';
+  }
+}
+
+// Add connection status to the header
+function addStatusToHeader(isConnected) {
+  const header = document.getElementById('n8n-builder-header');
+  if (!header) return;
+  
+  const statusDiv = document.createElement('div');
+  statusDiv.id = 'n8n-builder-connection-indicator';
+  statusDiv.className = `n8n-builder-connection-indicator ${isConnected ? 'connected' : 'disconnected'}`;
+  statusDiv.title = isConnected ? 'Connected' : 'Disconnected';
+  header.appendChild(statusDiv);
+}
+
+// Set up event listeners
+function setupEventListeners() {
+  const sendButton = document.getElementById('n8n-builder-send');
+  if (sendButton) {
+    sendButton.addEventListener('click', handleSendMessage);
+  }
+  
+  const inputField = document.getElementById('n8n-builder-input');
+  if (inputField) {
+    inputField.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSendMessage();
+      }
+    });
+  }
+  
+  const closeButton = document.getElementById('n8n-builder-close');
+  if (closeButton) {
+    closeButton.addEventListener('click', () => {
+      const chat = document.getElementById('n8n-builder-chat');
+      if (chat) chat.remove();
+    });
+  }
+  
+  const minimizeButton = document.getElementById('n8n-builder-minimize');
+  if (minimizeButton) {
+    minimizeButton.addEventListener('click', () => {
+      const chat = document.getElementById('n8n-builder-chat');
+      if (chat) chat.remove();
+    });
+  }
+  
+  // Enhanced clear button functionality
+  const clearButton = document.getElementById('n8n-builder-clear');
+  if (clearButton) {
+    clearButton.addEventListener('click', async () => {
+      console.log('Clear button clicked - clearing current conversation');
+      
+      try {
+        // Save current conversation to history before clearing
+        if (window.chatDataManager) {
+          const currentMemory = window.chatDataManager.getCurrentMemory();
+          if (currentMemory.length > 0) {
+            await window.chatDataManager.saveToHistory();
+            showMiniToast('Conversation saved to history');
+          }
+          
+          // Clear current conversation
+          await window.chatDataManager.clearAllData();
+          window.messageDiffer.reset();
+          refreshChatUI();
+          showMiniToast('Conversation cleared');
+        }
+      } catch (error) {
+        console.error('Failed to clear conversation:', error);
+        showMiniToast('Failed to clear conversation');
+      }
+    });
+  }
+
+  // Enhanced history button functionality
+  const historyButton = document.getElementById('n8n-builder-history');
+  if (historyButton) {
+    historyButton.addEventListener('click', async () => {
+      console.log('History button clicked - displaying enhanced chat history');
+      await initEnhancedChatHistory();
+      const historyModal = document.getElementById('n8n-builder-history-modal');
+      if (historyModal) {
+        historyModal.style.display = 'block';
+      }
+    });
+  }
+
+  // Add close history button functionality
+  const closeHistoryButton = document.getElementById('n8n-builder-close-history');
+  if (closeHistoryButton) {
+    closeHistoryButton.addEventListener('click', () => {
+      const historyModal = document.getElementById('n8n-builder-history-modal');
+      if (historyModal) {
+        historyModal.style.display = 'none';
+      }
+    });
+  }
+}
+
+// Enhanced chat history initialization
+async function initEnhancedChatHistory() {
+  console.log('Initializing enhanced chat history modal...');
+  const historyList = document.getElementById('n8n-builder-history-list');
+  const historyModal = document.getElementById('n8n-builder-history-modal');
+
+  if (!historyList || !historyModal) return;
+
+  try {
+    // Get history from data manager
+    const historyItems = window.chatDataManager ? 
+      await window.chatDataManager.getHistory() : [];
+
+    // Clear and populate history list
+    historyList.innerHTML = '';
+    
+    if (historyItems.length > 0) {
+      historyItems.forEach((item, index) => {
+        const listItem = document.createElement('li');
+        listItem.className = 'history-item';
+        listItem.innerHTML = `
+          <div class="history-item-header">
+            <span class="history-title">${item.title}</span>
+            <span class="history-date">${new Date(item.timestamp).toLocaleDateString()}</span>
+          </div>
+          <div class="history-meta">
+            ${item.messageCount} messages
+          </div>
+          <div class="history-actions">
+            <button class="restore-btn" data-id="${item.id}">Restore</button>
+            <button class="delete-btn" data-id="${item.id}">Delete</button>
+          </div>
+        `;
+        
+        // Add restore functionality
+        const restoreBtn = listItem.querySelector('.restore-btn');
+        restoreBtn.addEventListener('click', async () => {
+          try {
+            await window.chatDataManager.loadFromHistory(item.id);
+            window.messageDiffer.reset();
+            refreshChatUI();
+            historyModal.style.display = 'none';
+            showMiniToast('Conversation restored');
+          } catch (error) {
+            console.error('Failed to restore conversation:', error);
+            showMiniToast('Failed to restore conversation');
+          }
+        });
+
+        // Add delete functionality
+        const deleteBtn = listItem.querySelector('.delete-btn');
+        deleteBtn.addEventListener('click', async () => {
+          if (confirm('Are you sure you want to delete this conversation?')) {
+            try {
+              await window.chatDataManager.deleteFromHistory(item.id);
+              listItem.remove();
+              showMiniToast('Conversation deleted');
+            } catch (error) {
+              console.error('Failed to delete conversation:', error);
+              showMiniToast('Failed to delete conversation');
+            }
+          }
+        });
+
+        historyList.appendChild(listItem);
+      });
+    } else {
+      historyList.innerHTML = '<li class="no-history">No conversation history found.</li>';
+    }
+  } catch (error) {
+    console.error('Failed to load chat history:', error);
+    historyList.innerHTML = '<li class="error">Failed to load history.</li>';
+  }
+}
+
+// Restore chat history to the UI (enhanced with diffing)
+async function restoreChatHistory() {
+  console.log('Restoring chat history to UI...');
+  
+  try {
+    if (window.chatDataManager) {
+      // Load from storage using data manager
+      await window.chatDataManager.loadFromStorage();
+      const currentMemory = window.chatDataManager.getCurrentMemory();
+      
+      // Reset differ and render messages
+      window.messageDiffer.reset();
+      renderMessages(currentMemory);
+      
+      console.log(`Restored ${currentMemory.length} messages using enhanced system.`);
+    }
+  } catch (error) {
+    console.error('Failed to restore chat history:', error);
+    showMiniToast('Failed to restore chat history');
+  }
+}
+
+// Initialize the chatbot
+function initChatbot() {
+  // Inject the chat HTML
+  injectChatHtml(() => {
+    // Set up event listeners after HTML is injected
+    setupEventListeners();
+    
+    // Restore chat history with enhanced system
+    setTimeout(async () => {
+      await restoreChatHistory();
+    }, 500);
+    
+    // Test content script connection
+    testContentScriptConnection();
+    
+    // Add status indicator to header
+    addStatusToHeader(true);
+  });
+}
+
+// Legacy compatibility function
+function loadChatHistoryFromStorage() {
+  console.log('Legacy loadChatHistoryFromStorage called - using enhanced system');
+  return restoreChatHistory();
+}
+
+// Trigger chatMemoryUpdated event when chat memory is updated
+window.addEventListener('chatMemoryUpdated', () => {
+  refreshChatUI();
+});

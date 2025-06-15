@@ -1,5 +1,5 @@
 // chatbot/modules/chatbot-data.js
-// Data management module - handles all chat memory operations atomically
+// Data management module - handles all chat memory operations atomically with IndexedDB
 
 // Data validation utilities
 function validateMessage(message) {
@@ -34,12 +34,64 @@ function validateConversation(conversation) {
   return true;
 }
 
-// Atomic storage operations with race condition prevention
+// Atomic storage operations with race condition prevention and IndexedDB
 class ChatDataManager {
   constructor() {
     this.isOperationInProgress = false;
     this.operationQueue = [];
-    this.maxConversations = window.MAX_CONVERSATIONS || 5;
+    this.maxConversations = window.MAX_CONVERSATIONS || 100;
+    this.maxHistoryItems = 50;
+    this.db = null;
+    this.dbInitialized = false;
+    this.initializeDatabase();
+  }
+
+  // Initialize IndexedDB for persistent storage
+  async initializeDatabase() {
+    if (this.dbInitialized) return;
+    
+    return new Promise((resolve, reject) => {
+      const openRequest = indexedDB.open('n8n-copilot-chat-memory', 2);
+
+      openRequest.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        
+        // Create conversations store for current chat
+        if (!db.objectStoreNames.contains('conversations')) {
+          const conversationStore = db.createObjectStore('conversations', { keyPath: 'id' });
+          conversationStore.createIndex('timestamp', 'timestamp', { unique: false });
+        }
+        
+        // Create history store for saved conversations
+        if (!db.objectStoreNames.contains('history')) {
+          const historyStore = db.createObjectStore('history', { keyPath: 'id', autoIncrement: true });
+          historyStore.createIndex('timestamp', 'timestamp', { unique: false });
+          historyStore.createIndex('title', 'title', { unique: false });
+        }
+      };
+
+      openRequest.onerror = () => {
+        console.error('Failed to open IndexedDB:', openRequest.error);
+        this.showStorageError('Failed to initialize storage');
+        reject(openRequest.error);
+      };
+
+      openRequest.onsuccess = () => {
+        this.db = openRequest.result;
+        this.dbInitialized = true;
+        console.log('IndexedDB initialized successfully');
+        resolve();
+      };
+    });
+  }
+
+  // Show user-friendly storage error notifications
+  showStorageError(message) {
+    if (window.showNotification) {
+      window.showNotification(message, 'error');
+    } else {
+      console.error('Storage Error:', message);
+    }
   }
 
   // Queue operations to prevent race conditions
@@ -70,7 +122,7 @@ class ChatDataManager {
     }
   }
 
-  // Atomic message addition
+  // Atomic message addition with IndexedDB persistence
   async addMessage(message) {
     return this.executeAtomically(async () => {
       // Validate message before adding
@@ -96,7 +148,7 @@ class ChatDataManager {
         window.chatMemory = window.chatMemory.slice(-this.maxConversations);
       }
 
-      // Persist to storage
+      // Persist to IndexedDB and fallback storage
       await this.persistToStorage();
 
       return messageCopy;
@@ -126,39 +178,166 @@ class ChatDataManager {
     });
   }
 
-  // Atomic conversation appending (for switching without data loss)
-  async appendConversation(conversation) {
+  // Save current conversation to history
+  async saveToHistory(title = null) {
     return this.executeAtomically(async () => {
-      // Validate conversation before appending
-      validateConversation(conversation);
-
-      // Ensure chat memory exists
-      if (!window.chatMemory) {
-        window.chatMemory = [];
+      if (!window.chatMemory || window.chatMemory.length === 0) {
+        throw new Error('No conversation to save');
       }
 
-      // Create deep copies and append
-      const conversationCopy = conversation.map(message => ({
-        role: message.role,
-        content: message.content,
-        timestamp: message.timestamp || new Date().toISOString()
-      }));
+      await this.initializeDatabase();
 
-      window.chatMemory = [...window.chatMemory, ...conversationCopy];
+      const historyItem = {
+        title: title || this.generateConversationTitle(),
+        messages: [...window.chatMemory],
+        timestamp: new Date().toISOString(),
+        messageCount: window.chatMemory.length
+      };
 
-      // Limit memory size
-      if (window.chatMemory.length > this.maxConversations) {
-        window.chatMemory = window.chatMemory.slice(-this.maxConversations);
+      const transaction = this.db.transaction(['history'], 'readwrite');
+      const store = transaction.objectStore('history');
+      
+      try {
+        await new Promise((resolve, reject) => {
+          const request = store.add(historyItem);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+
+        // Prune old history items
+        await this.pruneHistory();
+
+        return historyItem;
+      } catch (error) {
+        this.showStorageError('Failed to save conversation to history');
+        throw error;
       }
-
-      // Persist to storage
-      await this.persistToStorage();
-
-      return window.chatMemory;
     });
   }
 
-  // Atomic storage persistence
+  // Load conversation from history
+  async loadFromHistory(historyId) {
+    return this.executeAtomically(async () => {
+      await this.initializeDatabase();
+
+      const transaction = this.db.transaction(['history'], 'readonly');
+      const store = transaction.objectStore('history');
+
+      try {
+        const historyItem = await new Promise((resolve, reject) => {
+          const request = store.get(historyId);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+
+        if (!historyItem) {
+          throw new Error('History item not found');
+        }
+
+        // Load the conversation
+        await this.loadConversation(historyItem.messages);
+        
+        return historyItem;
+      } catch (error) {
+        this.showStorageError('Failed to load conversation from history');
+        throw error;
+      }
+    });
+  }
+
+  // Get all history items
+  async getHistory() {
+    await this.initializeDatabase();
+
+    const transaction = this.db.transaction(['history'], 'readonly');
+    const store = transaction.objectStore('history');
+    const index = store.index('timestamp');
+
+    try {
+      return await new Promise((resolve, reject) => {
+        const request = index.getAll();
+        request.onsuccess = () => {
+          const items = request.result.reverse(); // Most recent first
+          resolve(items);
+        };
+        request.onerror = () => reject(request.error);
+      });
+    } catch (error) {
+      this.showStorageError('Failed to load conversation history');
+      return [];
+    }
+  }
+
+  // Delete history item
+  async deleteFromHistory(historyId) {
+    return this.executeAtomically(async () => {
+      await this.initializeDatabase();
+
+      const transaction = this.db.transaction(['history'], 'readwrite');
+      const store = transaction.objectStore('history');
+
+      try {
+        await new Promise((resolve, reject) => {
+          const request = store.delete(historyId);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+
+        return true;
+      } catch (error) {
+        this.showStorageError('Failed to delete conversation from history');
+        throw error;
+      }
+    });
+  }
+
+  // Prune old history items to maintain size limits
+  async pruneHistory() {
+    const transaction = this.db.transaction(['history'], 'readwrite');
+    const store = transaction.objectStore('history');
+    const index = store.index('timestamp');
+
+    try {
+      const allItems = await new Promise((resolve, reject) => {
+        const request = index.getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+
+      if (allItems.length > this.maxHistoryItems) {
+        // Sort by timestamp and remove oldest items
+        allItems.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        const itemsToDelete = allItems.slice(0, allItems.length - this.maxHistoryItems);
+
+        for (const item of itemsToDelete) {
+          await new Promise((resolve, reject) => {
+            const request = store.delete(item.id);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+          });
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to prune history:', error);
+    }
+  }
+
+  // Generate conversation title from first user message
+  generateConversationTitle() {
+    if (!window.chatMemory || window.chatMemory.length === 0) {
+      return 'Empty Conversation';
+    }
+
+    const firstUserMessage = window.chatMemory.find(msg => msg.role === 'user');
+    if (firstUserMessage) {
+      const title = firstUserMessage.content.substring(0, 50);
+      return title.length < firstUserMessage.content.length ? title + '...' : title;
+    }
+
+    return `Conversation ${new Date().toLocaleDateString()}`;
+  }
+
+  // Atomic storage persistence with IndexedDB primary and cookie fallback
   async persistToStorage() {
     return this.executeAtomically(async () => {
       if (!window.chatMemory) {
@@ -168,20 +347,47 @@ class ChatDataManager {
       // Validate all messages before persisting
       validateConversation(window.chatMemory);
 
-      const serializedData = JSON.stringify(window.chatMemory);
-      
-      // Primary storage: cookies
-      if (typeof window.setCookie === 'function') {
-        window.setCookie('n8n-copilot-chat-memory', serializedData, 7);
-      } else {
-        throw new Error('setCookie function not available');
+      try {
+        // Primary storage: IndexedDB
+        await this.initializeDatabase();
+        
+        const conversationData = {
+          id: 'current',
+          messages: window.chatMemory,
+          timestamp: new Date().toISOString()
+        };
+
+        const transaction = this.db.transaction(['conversations'], 'readwrite');
+        const store = transaction.objectStore('conversations');
+        
+        await new Promise((resolve, reject) => {
+          const request = store.put(conversationData);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+
+      } catch (error) {
+        console.warn('IndexedDB persistence failed, falling back to cookie:', error);
+        this.showStorageError('Storage warning: Using fallback storage');
+      }
+
+      // Fallback storage: cookies
+      try {
+        const serializedData = JSON.stringify(window.chatMemory);
+        if (typeof window.setCookie === 'function') {
+          window.setCookie('n8n-copilot-chat-memory', serializedData, 7);
+        }
+      } catch (error) {
+        console.error('Cookie fallback failed:', error);
+        this.showStorageError('Failed to save conversation');
+        throw error;
       }
 
       // Debug logging
       if (window.chatHistoryDebugger) {
         window.chatHistoryDebugger.log('Data persisted atomically', 'debug', {
           messagesCount: window.chatMemory.length,
-          dataSize: serializedData.length
+          storage: 'IndexedDB + Cookie'
         });
       }
 
@@ -189,10 +395,40 @@ class ChatDataManager {
     });
   }
 
-  // Atomic storage loading
+  // Atomic storage loading with IndexedDB primary and cookie fallback
   async loadFromStorage() {
     return this.executeAtomically(async () => {
-      // Try cookies first (primary storage)
+      // Try IndexedDB first (primary storage)
+      try {
+        await this.initializeDatabase();
+        
+        const transaction = this.db.transaction(['conversations'], 'readonly');
+        const store = transaction.objectStore('conversations');
+        
+        const conversationData = await new Promise((resolve, reject) => {
+          const request = store.get('current');
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+
+        if (conversationData && conversationData.messages) {
+          validateConversation(conversationData.messages);
+          window.chatMemory = conversationData.messages;
+          
+          // Debug logging
+          if (window.chatHistoryDebugger) {
+            window.chatHistoryDebugger.log('Data loaded from IndexedDB', 'debug', {
+              messagesCount: window.chatMemory.length
+            });
+          }
+          
+          return window.chatMemory;
+        }
+      } catch (error) {
+        console.warn('IndexedDB loading failed, trying cookie fallback:', error);
+      }
+
+      // Fallback to cookies
       if (typeof window.getCookie === 'function') {
         const cookieData = window.getCookie('n8n-copilot-chat-memory');
         
@@ -202,17 +438,24 @@ class ChatDataManager {
             validateConversation(parsedData);
             window.chatMemory = parsedData;
             
+            // Migrate to IndexedDB
+            try {
+              await this.persistToStorage();
+            } catch (migrationError) {
+              console.warn('Failed to migrate to IndexedDB:', migrationError);
+            }
+            
             // Debug logging
             if (window.chatHistoryDebugger) {
-              window.chatHistoryDebugger.log('Data loaded from storage', 'debug', {
-                messagesCount: window.chatMemory.length,
-                source: 'cookie'
+              window.chatHistoryDebugger.log('Data loaded from cookie', 'debug', {
+                messagesCount: window.chatMemory.length
               });
             }
             
             return window.chatMemory;
           } catch (error) {
             console.error('Failed to parse chat history from cookie:', error);
+            this.showStorageError('Storage data corruption detected');
             throw new Error(`Storage data corruption: ${error.message}`);
           }
         }
@@ -227,7 +470,7 @@ class ChatDataManager {
           validateConversation(parsedData);
           window.chatMemory = parsedData;
           
-          // Migrate to cookie and clean up localStorage
+          // Migrate to IndexedDB and clean up localStorage
           await this.persistToStorage();
           localStorage.removeItem('n8n-copilot-chat-memory');
           
@@ -242,7 +485,7 @@ class ChatDataManager {
         }
       } catch (error) {
         console.error('Failed to migrate from localStorage:', error);
-        throw new Error(`Migration failed: ${error.message}`);
+        this.showStorageError('Migration from old storage failed');
       }
 
       // No data found
@@ -256,11 +499,27 @@ class ChatDataManager {
     return this.executeAtomically(async () => {
       window.chatMemory = [];
       
-      // Clear from all storage locations
+      // Clear from IndexedDB
+      try {
+        await this.initializeDatabase();
+        const transaction = this.db.transaction(['conversations'], 'readwrite');
+        const store = transaction.objectStore('conversations');
+        
+        await new Promise((resolve, reject) => {
+          const request = store.delete('current');
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+      } catch (error) {
+        console.warn('Failed to clear IndexedDB:', error);
+      }
+      
+      // Clear from cookies
       if (typeof window.setCookie === 'function') {
         window.setCookie('n8n-copilot-chat-memory', '', -1); // Expire cookie
       }
       
+      // Clear from localStorage
       try {
         localStorage.removeItem('n8n-copilot-chat-memory');
       } catch (error) {
@@ -273,6 +532,28 @@ class ChatDataManager {
       }
 
       return true;
+    });
+  }
+
+  // Clear all history
+  async clearHistory() {
+    return this.executeAtomically(async () => {
+      try {
+        await this.initializeDatabase();
+        const transaction = this.db.transaction(['history'], 'readwrite');
+        const store = transaction.objectStore('history');
+        
+        await new Promise((resolve, reject) => {
+          const request = store.clear();
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+
+        return true;
+      } catch (error) {
+        this.showStorageError('Failed to clear conversation history');
+        throw error;
+      }
     });
   }
 
