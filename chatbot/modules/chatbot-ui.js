@@ -9,6 +9,191 @@ window.showNotification = window.showNotification || function(message, type = 'i
   showMiniToast(message);
 };
 
+// Data manager class for chat persistence
+class ChatDataManager {
+  constructor() {
+    this.currentMemory = window.chatMemory || [];
+    this.history = [];
+    this.historyKey = 'n8n-copilot-chat-history';
+  }
+
+  // Add message to current memory
+  addMessage(message) {
+    return new Promise((resolve, reject) => {
+      try {
+        this.currentMemory.push({
+          ...message,
+          timestamp: new Date().toISOString()
+        });
+        window.chatMemory = this.currentMemory;
+        window.dispatchEvent(new Event('chatMemoryUpdated'));
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  // Get current memory
+  getCurrentMemory() {
+    return this.currentMemory;
+  }
+
+  // Load from storage
+  loadFromStorage() {
+    return new Promise((resolve, reject) => {
+      try {
+        // Try to load from cookie first
+        const cookieKey = 'n8n-copilot-chat-memory';
+        const cookieData = getCookie(cookieKey);
+        if (cookieData) {
+          try {
+            const parsedHistory = JSON.parse(cookieData);
+            if (Array.isArray(parsedHistory)) {
+              this.currentMemory = parsedHistory;
+              window.chatMemory = this.currentMemory;
+              resolve();
+              return;
+            }
+          } catch (error) {
+            console.error('Failed to parse chat history from cookie:', error);
+          }
+        }
+
+        // Fallback to localStorage
+        try {
+          const localStorageData = localStorage.getItem('n8n-copilot-chat-memory');
+          if (localStorageData) {
+            const parsedHistory = JSON.parse(localStorageData);
+            if (Array.isArray(parsedHistory)) {
+              this.currentMemory = parsedHistory;
+              window.chatMemory = this.currentMemory;
+              // Save to cookie and clear localStorage to complete migration
+              setCookie(cookieKey, localStorageData, 7);
+              localStorage.removeItem('n8n-copilot-chat-memory');
+              resolve();
+              return;
+            }
+          }
+        } catch (error) {
+          console.error('Failed to load chat history from localStorage:', error);
+        }
+
+        resolve(); // No history found, but no error
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  // Save current conversation to history
+  saveToHistory() {
+    return new Promise((resolve, reject) => {
+      try {
+        const historyItem = {
+          id: Date.now().toString(),
+          title: `Conversation ${new Date().toLocaleDateString()}`,
+          timestamp: new Date().toISOString(),
+          messageCount: this.currentMemory.length,
+          data: this.currentMemory
+        };
+        
+        this.history.push(historyItem);
+        this.saveHistoryToStorage();
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  // Load conversation from history
+  loadFromHistory(id) {
+    return new Promise((resolve, reject) => {
+      try {
+        const historyItem = this.history.find(item => item.id === id);
+        if (historyItem) {
+          this.currentMemory = historyItem.data;
+          window.chatMemory = this.currentMemory;
+          window.dispatchEvent(new Event('chatMemoryUpdated'));
+          resolve();
+        } else {
+          reject(new Error('History item not found'));
+        }
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  // Get history
+  getHistory() {
+    return new Promise((resolve, reject) => {
+      try {
+        resolve(this.history);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  // Delete history item
+  deleteHistoryItem(id) {
+    return new Promise((resolve, reject) => {
+      try {
+        this.history = this.history.filter(item => item.id !== id);
+        this.saveHistoryToStorage();
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  // Clear all data
+  clearAllData() {
+    return new Promise((resolve, reject) => {
+      try {
+        // Clear current memory and window object
+        this.currentMemory = [];
+        window.chatMemory = [];
+        window.dispatchEvent(new Event('chatMemoryUpdated'));
+
+        // Clear cookie
+        document.cookie = 'n8n-copilot-chat-memory=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+
+        // Clear localStorage
+        localStorage.removeItem('n8n-copilot-chat-memory');
+
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  // Save history to storage
+  saveHistoryToStorage() {
+    try {
+      localStorage.setItem(this.historyKey, JSON.stringify(this.history));
+    } catch (error) {
+      console.error('Failed to save chat history to storage:', error);
+    }
+  }
+
+  // Load history from storage
+  loadHistoryFromStorage() {
+    try {
+      const data = localStorage.getItem(this.historyKey);
+      if (data) {
+        this.history = JSON.parse(data);
+      }
+    } catch (error) {
+      console.error('Failed to load chat history from storage:', error);
+    }
+  }
+}
+
 // Inject chat CSS if not already present
 function injectChatStyles() {
   if (typeof window.sendToContentScript === 'function') {
@@ -164,8 +349,8 @@ class MessageDiffer {
 
   // Compare two messages for equality
   messagesEqual(msg1, msg2) {
-    return msg1 && msg2 && 
-           msg1.role === msg2.role && 
+    return msg1 && msg2 &&
+           msg1.role === msg2.role &&
            msg1.content === msg2.content &&
            msg1.timestamp === msg2.timestamp;
   }
@@ -184,8 +369,14 @@ function renderMessages(messages) {
   const messagesArea = document.getElementById('n8n-builder-messages');
   if (!messagesArea) return false;
 
+  // Handle empty messages array
+  if (messages.length === 0) {
+    messagesArea.innerHTML = '';
+    return true;
+  }
+
   const operations = window.messageDiffer.calculateDiff(messages);
-  
+
   if (operations.length === 0) {
     // No changes needed
     return true;
@@ -307,9 +498,13 @@ function addMessage(sender, text, saveToMemory = true) {
 
 // Refresh chat UI from current memory state
 function refreshChatUI() {
+  console.log('Refreshing chat UI');
   if (window.chatDataManager) {
     const currentMemory = window.chatDataManager.getCurrentMemory();
+    console.log('Current memory:', currentMemory);
     renderMessages(currentMemory);
+  } else {
+    console.log('chatDataManager is not available');
   }
 }
 
@@ -405,30 +600,36 @@ function setupEventListeners() {
   // Enhanced clear button functionality
   const clearButton = document.getElementById('n8n-builder-clear');
   if (clearButton) {
-    clearButton.addEventListener('click', async () => {
+   clearButton.addEventListener('click', async () => {
       console.log('Clear button clicked - clearing current conversation');
-      
+      window.clearButtonClicked = true; // Set flag to prevent history restore
+
       try {
         // Save current conversation to history before clearing
         if (window.chatDataManager) {
-          const currentMemory = window.chatDataManager.getCurrentMemory();
-          if (currentMemory.length > 0) {
-            await window.chatDataManager.saveToHistory();
-            showMiniToast('Conversation saved to history');
-          }
-          
-          // Clear current conversation
-          await window.chatDataManager.clearAllData();
-          window.messageDiffer.reset();
-          refreshChatUI();
-          showMiniToast('Conversation cleared');
-        }
-      } catch (error) {
-        console.error('Failed to clear conversation:', error);
-        showMiniToast('Failed to clear conversation');
-      }
-    });
-  }
+           const currentMemory = window.chatDataManager.getCurrentMemory();
+           if (currentMemory.length > 0) {
+             await window.chatDataManager.saveToHistory();
+             showMiniToast('Conversation saved to history');
+           }
+
+           // Clear current conversation
+           await window.chatDataManager.clearAllData();
+           window.messageDiffer.reset();
+           refreshChatUI();
+           showMiniToast('Conversation cleared');
+         }
+       } catch (error) {
+         console.error('Failed to clear conversation:', error);
+         showMiniToast('Failed to clear conversation');
+       } finally {
+         // Ensure the flag is set for at least a short time to prevent immediate restore
+         setTimeout(() => {
+           window.clearButtonClicked = false;
+         }, 1000); // Keep flag set for 1 second
+       }
+     });
+   }
 
   // Enhanced history button functionality
   const historyButton = document.getElementById('n8n-builder-history');
@@ -507,48 +708,54 @@ async function initEnhancedChatHistory() {
         // Add delete functionality
         const deleteBtn = listItem.querySelector('.delete-btn');
         deleteBtn.addEventListener('click', async () => {
-          if (confirm('Are you sure you want to delete this conversation?')) {
-            try {
-              await window.chatDataManager.deleteFromHistory(item.id);
-              listItem.remove();
-              showMiniToast('Conversation deleted');
-            } catch (error) {
-              console.error('Failed to delete conversation:', error);
-              showMiniToast('Failed to delete conversation');
-            }
+          try {
+            await window.chatDataManager.deleteHistoryItem(item.id);
+            showMiniToast('History item deleted');
+            initEnhancedChatHistory(); // Refresh history list
+          } catch (error) {
+            console.error('Failed to delete history item:', error);
+            showMiniToast('Failed to delete history item');
           }
         });
-
-        historyList.appendChild(listItem);
       });
     } else {
-      historyList.innerHTML = '<li class="no-history">No conversation history found.</li>';
+      historyList.innerHTML = '<p>No chat history available.</p>';
     }
   } catch (error) {
-    console.error('Failed to load chat history:', error);
-    historyList.innerHTML = '<li class="error">Failed to load history.</li>';
+    console.error('Failed to initialize chat history:', error);
+    historyList.innerHTML = '<p>Failed to load chat history.</p>';
   }
 }
 
 // Restore chat history to the UI (enhanced with diffing)
 async function restoreChatHistory() {
   console.log('Restoring chat history to UI...');
-  
+
+  // Check if clear button was clicked
+  if (window.clearButtonClicked) {
+    console.log('Clear button was clicked, skipping restore chat history');
+    window.clearButtonClicked = false; // Reset the flag
+    return;
+  }
+
   try {
     if (window.chatDataManager) {
       // Load from storage using data manager
       await window.chatDataManager.loadFromStorage();
       const currentMemory = window.chatDataManager.getCurrentMemory();
-      
+
       // Reset differ and render messages
       window.messageDiffer.reset();
       renderMessages(currentMemory);
-      
+
       console.log(`Restored ${currentMemory.length} messages using enhanced system.`);
     }
   } catch (error) {
     console.error('Failed to restore chat history:', error);
     showMiniToast('Failed to restore chat history');
+  } finally {
+    // Ensure the flag is reset even if there's an error
+    window.clearButtonClicked = false;
   }
 }
 
@@ -559,10 +766,15 @@ function initChatbot() {
     // Set up event listeners after HTML is injected
     setupEventListeners();
     
-    // Restore chat history with enhanced system
-    setTimeout(async () => {
-      await restoreChatHistory();
-    }, 500);
+    // Initialize chatDataManager
+    window.chatDataManager = window.chatDataManager || new ChatDataManager();
+// Restore chat history with enhanced system
+if (!window.clearButtonClicked) {
+  setTimeout(async () => {
+    await restoreChatHistory();
+  }, 500);
+}
+
     
     // Test content script connection
     testContentScriptConnection();
@@ -578,7 +790,38 @@ function loadChatHistoryFromStorage() {
   return restoreChatHistory();
 }
 
-// Trigger chatMemoryUpdated event when chat memory is updated
-window.addEventListener('chatMemoryUpdated', () => {
-  refreshChatUI();
-});
+// Inject the chat icon bubble
+function injectChatIcon() {
+  // Check if we have the resource URLs yet
+  if (!window.extensionResources) {
+    // If not, request them and return
+    // Use the global sendToContentScript function
+    if (typeof window.sendToContentScript === 'function') {
+      window.sendToContentScript({ type: 'getResourceURLs' });
+    } else {
+      console.error('sendToContentScript function not available');
+    }
+    return;
+  }
+
+  // Remove existing icon if present
+  const existingIcon = document.getElementById('n8n-builder-icon');
+  if (existingIcon) existingIcon.remove();
+
+  // Get the icon URL
+  const iconUrl = getResourceURL('icons/chat-icon-48.png');
+
+  // Create the chat icon
+  const iconDiv = document.createElement('div');
+  iconDiv.id = 'n8n-builder-icon';
+  iconDiv.className = 'n8n-builder-chat-icon';
+  iconDiv.innerHTML = `
+    <img src="${iconUrl}" alt="n8n Co Pilot" />
+  `;
+  document.body.appendChild(iconDiv);
+
+  // Add click event to the icon
+  iconDiv.addEventListener('click', () => {
+    toggleChat();
+  });
+}

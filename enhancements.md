@@ -1,0 +1,1 @@
+Modify this chrome extension by creating a tool for the LLM that allows it to use natural language commands to manipulate an N8N canvas through the N8N api. Update the N8N Engineer system prompt to use this tool.

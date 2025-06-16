@@ -25,6 +25,7 @@ Key capabilities:
 - Provide best practices for automation
 - Generate workflow JSON when requested
 - Add chat triggers (Slack, Discord, Mattermost, Webhook) to workflows
+- Execute natural language commands to manipulate the N8N canvas
 
 🚨 CRITICAL RULE: When users request to create, add, or generate specific nodes, you MUST ALWAYS provide workflow JSON.
 
@@ -107,6 +108,29 @@ Common node types:
 CHAT_TRIGGER command format:
 CHAT_TRIGGER: {"platform": "slack|discord|mattermost|webhook"}
 
+NATURAL LANGUAGE COMMANDS:
+You can execute natural language commands to manipulate the N8N canvas using the following formats:
+
+1. Rename a node:
+   "Rename 'Old Node Name' to 'New Node Name'"
+
+2. Add a new node:
+   "Add a new node named 'Node Name' of type 'nodeType' with parameters {JSON parameters}"
+
+3. Delete a node:
+   "Delete the node named 'Node Name'"
+
+4. Connect nodes:
+   "Connect 'Output Node Name' to 'Input Node Name'"
+
+5. Update a node:
+   "Update 'Node Name' with new parameters {JSON parameters}"
+
+6. Count nodes:
+   "Count the nodes in the workflow"
+
+These commands will be automatically translated into API calls to manipulate the canvas.
+
 REMEMBER: Every node creation request MUST include JSON. No exceptions!`
       }
     ];
@@ -174,70 +198,77 @@ REMEMBER: Every node creation request MUST include JSON. No exceptions!`
       }
     }
 
-    // Check if the response contains chat trigger commands
-    if (assistantMessage.includes('CHAT_TRIGGER:')) {
-      const triggerMatch = assistantMessage.match(/CHAT_TRIGGER:\s*(\{.*?\})/s);
-      if (triggerMatch) {
+    // Check for natural language commands to manipulate the N8N canvas
+    const naturalLanguageCommands = [
+      { pattern: /rename '(.+?)' to '(.+?)'/i, handler: (matches) => ({
+        command: 'rename_node',
+        oldName: matches[1],
+        newName: matches[2]
+      }) },
+      { pattern: /add a new node named '(.+?)' of type '(.+?)'(?: with parameters (.+))?/i, handler: (matches) => {
+        const nodeName = matches[1];
+        const nodeType = matches[2];
+        let parameters = {};
         try {
-          const triggerCommand = JSON.parse(triggerMatch[1]);
-          const platform = triggerCommand.platform || 'slack';
-          console.log('Adding chat trigger for platform:', platform);
-          await addChatTrigger(platform);
+          parameters = matches[3] ? JSON.parse(matches[3]) : {};
         } catch (error) {
-          console.error('Error parsing chat trigger command:', error);
-          // Fallback to default platform if parsing fails
-          await addChatTrigger('slack');
+          console.error('Error parsing parameters:', error);
+          addMessage('assistant', 'Error parsing parameters. Please provide valid JSON.');
+          return null;
+        }
+        return {
+          command: 'add_node',
+          node: {
+            name: nodeName,
+            type: nodeType,
+            position: [Math.random() * 500, Math.random() * 500],
+            parameters: parameters
+          }
+        };
+      } },
+      { pattern: /delete the node named '(.+?)'/i, handler: (matches) => ({
+        command: 'delete_node',
+        nodeName: matches[1]
+      }) },
+      { pattern: /connect '(.+?)' to '(.+?)'/i, handler: (matches) => ({
+        command: 'connect_nodes',
+        outputNode: matches[1],
+        inputNode: matches[2]
+      }) },
+      { pattern: /update '(.+?)' with new parameters (.+)/i, handler: (matches) => {
+        const nodeName = matches[1];
+        let updates = {};
+        try {
+          updates = JSON.parse(matches[2]);
+        } catch (error) {
+          console.error('Error parsing updates:', error);
+          addMessage('assistant', 'Error parsing updates. Please provide valid JSON.');
+          return null;
+        }
+        return {
+          command: 'update_node',
+          nodeName: nodeName,
+          updates: updates
+        };
+      } },
+      { pattern: /count the nodes in the workflow/i, handler: () => ({
+        command: 'count_nodes'
+      }) }
+    ];
+
+    for (const cmd of naturalLanguageCommands) {
+      const match = userMessage.match(cmd.pattern);
+      if (match) {
+        const apiCommand = cmd.handler(match);
+        if (apiCommand) {
+          await handleN8nApiCommand(apiCommand);
+          return;
         }
       }
     }
 
   } catch (error) {
-    console.error('Error calling OpenAI:', error);
     removeLoadingIndicator();
-    addMessage('assistant', `Sorry, I encountered an error: ${error.message}`);
+    addMessage('assistant', `Error: ${error.message}`);
   }
 }
-
-// Helper function to show loading indicator
-function showLoadingIndicator() {
-  const messagesArea = document.getElementById('n8n-builder-messages');
-  if (!messagesArea) return;
-
-  // Remove any existing loading indicator
-  removeLoadingIndicator();
-
-  const loadingDiv = document.createElement('div');
-  loadingDiv.id = 'n8n-builder-loading';
-  loadingDiv.className = 'n8n-builder-message assistant-message loading';
-  loadingDiv.innerHTML = `
-    <div class="message-avatar assistant-avatar"></div>
-    <div class="message-content">
-      <div class="typing-indicator">
-        <span></span>
-        <span></span>
-        <span></span>
-      </div>
-    </div>
-  `;
-  messagesArea.appendChild(loadingDiv);
-  messagesArea.scrollTop = messagesArea.scrollHeight;
-}
-
-// Helper function to remove loading indicator
-function removeLoadingIndicator() {
-  const loadingIndicator = document.getElementById('n8n-builder-loading');
-  if (loadingIndicator) {
-    loadingIndicator.remove();
-  }
-}
-
-// Alias for backward compatibility
-function hideLoadingIndicator() {
-  removeLoadingIndicator();
-}
-
-// Make functions globally available
-window.callOpenAI = callOpenAI;
-window.showLoadingIndicator = showLoadingIndicator;
-window.removeLoadingIndicator = removeLoadingIndicator;
-window.hideLoadingIndicator = hideLoadingIndicator;
