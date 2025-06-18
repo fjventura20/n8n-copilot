@@ -162,9 +162,6 @@ class ChatDataManager {
         // Clear cookie
         document.cookie = 'n8n-copilot-chat-memory=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
 
-        // Clear localStorage
-        localStorage.removeItem('n8n-copilot-chat-memory');
-
         resolve();
       } catch (error) {
         reject(error);
@@ -225,9 +222,10 @@ function toggleChat() {
   console.log('toggleChat called');
   const existingChat = document.getElementById('n8n-builder-chat');
   if (existingChat) {
-    console.log('Removing existing chat');
-    existingChat.remove();
+    // If chat exists, just make sure it's visible
+    showChatbot();
   } else {
+    // If chat doesn't exist, create it
     if (isN8nPage()) {
       initChatbot();
     } else {
@@ -247,12 +245,12 @@ function injectChatHtml(callback) {
   } else {
     console.error('sendToContentScript function not available');
   }
-  
+
   // Store the callback to be called later
   window.processChatHtml = function(html) {
     const existingOverlay = document.getElementById('n8n-builder-chat');
     if (existingOverlay) existingOverlay.remove();
-    
+
     // Handle case where extension context is invalidated
     if (!html) {
       console.warn('Chat HTML not available - extension context may be invalidated');
@@ -260,17 +258,23 @@ function injectChatHtml(callback) {
       if (callback) callback();
       return;
     }
-    
+
     try {
       // Create a proper DOM element from the HTML string
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = html.trim();
-      
-      // Append the first child (should be the chat container) to the document body
-      const chatElement = tempDiv.firstElementChild;
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const chatElement = doc.getElementById('n8n-builder-chat');
+
       if (chatElement) {
         document.body.appendChild(chatElement);
         console.log('Chat HTML injected successfully');
+
+        // Ensure the chat container is visible
+        const chatContainer = document.getElementById('n8n-builder-chat');
+        if (chatContainer) {
+          chatContainer.style.display = 'flex';
+          localStorage.setItem('n8n-copilot-chat-visible', 'true');
+        }
       } else {
         console.error('Failed to parse chat HTML', html);
         showMiniToast('Failed to load chat interface');
@@ -279,7 +283,7 @@ function injectChatHtml(callback) {
       console.error('Error processing chat HTML:', error);
       showMiniToast('Error loading chat interface');
     }
-    
+
     if (callback) callback();
   };
 }
@@ -498,47 +502,86 @@ function addMessage(sender, text, saveToMemory = true) {
 
 // Refresh chat UI from current memory state
 function refreshChatUI() {
-  console.log('Refreshing chat UI');
   if (window.chatDataManager) {
-    const currentMemory = window.chatDataManager.getCurrentMemory();
-    console.log('Current memory:', currentMemory);
-    renderMessages(currentMemory);
-  } else {
-    console.log('chatDataManager is not available');
+    const messages = window.chatDataManager.getCurrentMemory();
+    renderMessages(messages);
   }
 }
 
-// Add loading indicator
-function showLoadingIndicator() {
-  const messagesArea = document.getElementById('n8n-builder-messages');
-  if (!messagesArea) return;
-  
-  const loadingDiv = document.createElement('div');
-  loadingDiv.id = 'n8n-builder-loading';
-  loadingDiv.className = 'n8n-builder-message assistant-message loading';
-  loadingDiv.innerHTML = `
-    <div class="message-avatar assistant-avatar"></div>
-    <div class="message-content">
-      <div class="typing-indicator">
-        <span></span>
-        <span></span>
-        <span></span>
-      </div>
-    </div>
-  `;
-  messagesArea.appendChild(loadingDiv);
-  messagesArea.scrollTop = messagesArea.scrollHeight;
-}
-
-// Remove loading indicator
-function removeLoadingIndicator() {
-  const loadingIndicator = document.getElementById('n8n-builder-loading');
-  if (loadingIndicator) {
-    loadingIndicator.remove();
+// Function to open the side panel
+function openSidePanel() {
+  const sidePanel = document.getElementById('n8n-builder-side-panel');
+  if (sidePanel) {
+    sidePanel.style.width = '300px'; // Adjust width as needed
   }
 }
 
-// Update the n8n page connection indicator
+// Function to close the side panel
+function closeSidePanel() {
+  const sidePanel = document.getElementById('n8n-builder-side-panel');
+  if (sidePanel) {
+    sidePanel.style.width = '0';
+  }
+}
+
+// Function to load chat history into the side panel
+async function loadChatHistory() {
+  const historyContainer = document.getElementById('n8n-builder-history-container');
+  if (!historyContainer) return;
+
+  // Clear existing history
+  historyContainer.innerHTML = '';
+
+  // Get chat history from data manager
+  const history = await window.chatDataManager.getHistory();
+
+  // Display each history item
+  history.forEach(item => {
+    const historyItem = document.createElement('div');
+    historyItem.className = 'n8n-builder-history-item';
+    historyItem.textContent = item.title;
+    historyContainer.appendChild(historyItem);
+  });
+}
+
+// Add event listeners for side panel controls
+function setupSidePanelEventListeners() {
+  const historyButton = document.querySelector('.n8n-builder-history-btn');
+  const closeButton = document.getElementById('n8n-builder-close-side-panel');
+
+  if (historyButton) {
+    historyButton.addEventListener('click', () => {
+      openSidePanel();
+      loadChatHistory();
+    });
+  }
+
+  if (closeButton) {
+    closeButton.addEventListener('click', () => {
+      closeSidePanel();
+    });
+  }
+}
+
+// Function to show the chatbot
+function showChatbot() {
+  const chatContainer = document.getElementById('n8n-builder-chat');
+  if (chatContainer) {
+    chatContainer.style.display = 'flex';
+    localStorage.setItem('n8n-copilot-chat-visible', 'true');
+  }
+}
+
+// Function to hide the chatbot
+function hideChatbot() {
+  const chatContainer = document.getElementById('n8n-builder-chat');
+  if (chatContainer) {
+    chatContainer.style.display = 'none';
+    localStorage.setItem('n8n-copilot-chat-visible', 'false');
+  }
+}
+
+// Function to update n8n page indicator status
 function updateN8nPageIndicator(status = null) {
   const indicator = document.getElementById('n8n-builder-connection-indicator');
   if (!indicator) return;
@@ -552,7 +595,7 @@ function updateN8nPageIndicator(status = null) {
   }
 }
 
-// Add connection status to the header
+// Function to add status to header
 function addStatusToHeader(isConnected) {
   const header = document.getElementById('n8n-builder-header');
   if (!header) return;
@@ -564,264 +607,158 @@ function addStatusToHeader(isConnected) {
   header.appendChild(statusDiv);
 }
 
-// Set up event listeners
+// Function to restore chat history
+async function restoreChatHistory() {
+  console.log('Restoring chat history...');
+  const messagesArea = document.getElementById('n8n-builder-messages');
+  if (!messagesArea || !window.chatDataManager) {
+    console.log('No messages area or data manager found');
+    return;
+  }
+
+  // Load history from data manager
+  await window.chatDataManager.loadFromStorage();
+  const messages = window.chatDataManager.getCurrentMemory();
+  renderMessages(messages);
+}
+
+// Add event listeners to the close button
 function setupEventListeners() {
+  const closeButton = document.getElementById('n8n-builder-close');
+  if (closeButton) {
+    closeButton.addEventListener('click', () => {
+      hideChatbot();
+    });
+  }
+
+  const minimizeButton = document.getElementById('n8n-builder-minimize');
+  if (minimizeButton) {
+    minimizeButton.addEventListener('click', () => {
+      // Implement minimize functionality here
+      console.log('Minimize button clicked');
+    });
+  }
+
   const sendButton = document.getElementById('n8n-builder-send');
   if (sendButton) {
-    sendButton.addEventListener('click', handleSendMessage);
+    sendButton.addEventListener('click', () => {
+      handleSendMessage();
+    });
   }
-  
-  const inputField = document.getElementById('n8n-builder-input');
-  if (inputField) {
-    inputField.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
+
+  const inputElement = document.getElementById('n8n-builder-input');
+  if (inputElement) {
+    inputElement.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault(); // Prevent newline
         handleSendMessage();
       }
     });
   }
-  
-  const closeButton = document.getElementById('n8n-builder-close');
-  if (closeButton) {
-    closeButton.addEventListener('click', () => {
-      const chat = document.getElementById('n8n-builder-chat');
-      if (chat) chat.remove();
-    });
-  }
-  
-  const minimizeButton = document.getElementById('n8n-builder-minimize');
-  if (minimizeButton) {
-    minimizeButton.addEventListener('click', () => {
-      const chat = document.getElementById('n8n-builder-chat');
-      if (chat) chat.remove();
-    });
-  }
-  
-  // Enhanced clear button functionality
+
   const clearButton = document.getElementById('n8n-builder-clear');
   if (clearButton) {
-   clearButton.addEventListener('click', async () => {
-      console.log('Clear button clicked - clearing current conversation');
-      window.clearButtonClicked = true; // Set flag to prevent history restore
-
-      try {
-        // Save current conversation to history before clearing
-        if (window.chatDataManager) {
-           const currentMemory = window.chatDataManager.getCurrentMemory();
-           if (currentMemory.length > 0) {
-             await window.chatDataManager.saveToHistory();
-             showMiniToast('Conversation saved to history');
-           }
-
-           // Clear current conversation
-           await window.chatDataManager.clearAllData();
-           window.messageDiffer.reset();
-           refreshChatUI();
-           showMiniToast('Conversation cleared');
-         }
-       } catch (error) {
-         console.error('Failed to clear conversation:', error);
-         showMiniToast('Failed to clear conversation');
-       } finally {
-         // Ensure the flag is set for at least a short time to prevent immediate restore
-         setTimeout(() => {
-           window.clearButtonClicked = false;
-         }, 1000); // Keep flag set for 1 second
-       }
-     });
-   }
-
-  // Enhanced history button functionality
-  const historyButton = document.getElementById('n8n-builder-history');
-  if (historyButton) {
-    historyButton.addEventListener('click', async () => {
-      console.log('History button clicked - displaying enhanced chat history');
-      await initEnhancedChatHistory();
-      const historyModal = document.getElementById('n8n-builder-history-modal');
-      if (historyModal) {
-        historyModal.style.display = 'block';
-      }
-    });
-  }
-
-  // Add close history button functionality
-  const closeHistoryButton = document.getElementById('n8n-builder-close-history');
-  if (closeHistoryButton) {
-    closeHistoryButton.addEventListener('click', () => {
-      const historyModal = document.getElementById('n8n-builder-history-modal');
-      if (historyModal) {
-        historyModal.style.display = 'none';
+    clearButton.addEventListener('click', async () => {
+      console.log('Clear button clicked');
+      window.clearButtonClicked = true;
+      if (window.chatDataManager) {
+        await window.chatDataManager.clearAllData();
+        refreshChatUI();
       }
     });
   }
 }
 
-// Enhanced chat history initialization
-async function initEnhancedChatHistory() {
-  console.log('Initializing enhanced chat history modal...');
-  const historyList = document.getElementById('n8n-builder-history-list');
-  const historyModal = document.getElementById('n8n-builder-history-modal');
+// Call showChatbot on initialization
+showChatbot();
 
-  if (!historyList || !historyModal) return;
-
-  try {
-    // Get history from data manager
-    const historyItems = window.chatDataManager ? 
-      await window.chatDataManager.getHistory() : [];
-
-    // Clear and populate history list
-    historyList.innerHTML = '';
-    
-    if (historyItems.length > 0) {
-      historyItems.forEach((item, index) => {
-        const listItem = document.createElement('li');
-        listItem.className = 'history-item';
-        listItem.innerHTML = `
-          <div class="history-item-header">
-            <span class="history-title">${item.title}</span>
-            <span class="history-date">${new Date(item.timestamp).toLocaleDateString()}</span>
-          </div>
-          <div class="history-meta">
-            ${item.messageCount} messages
-          </div>
-          <div class="history-actions">
-            <button class="restore-btn" data-id="${item.id}">Restore</button>
-            <button class="delete-btn" data-id="${item.id}">Delete</button>
-          </div>
-        `;
-        
-        // Add restore functionality
-        const restoreBtn = listItem.querySelector('.restore-btn');
-        restoreBtn.addEventListener('click', async () => {
-          try {
-            await window.chatDataManager.loadFromHistory(item.id);
-            window.messageDiffer.reset();
-            refreshChatUI();
-            historyModal.style.display = 'none';
-            showMiniToast('Conversation restored');
-          } catch (error) {
-            console.error('Failed to restore conversation:', error);
-            showMiniToast('Failed to restore conversation');
-          }
-        });
-
-        // Add delete functionality
-        const deleteBtn = listItem.querySelector('.delete-btn');
-        deleteBtn.addEventListener('click', async () => {
-          try {
-            await window.chatDataManager.deleteHistoryItem(item.id);
-            showMiniToast('History item deleted');
-            initEnhancedChatHistory(); // Refresh history list
-          } catch (error) {
-            console.error('Failed to delete history item:', error);
-            showMiniToast('Failed to delete history item');
-          }
-        });
-      });
-    } else {
-      historyList.innerHTML = '<p>No chat history available.</p>';
-    }
-  } catch (error) {
-    console.error('Failed to initialize chat history:', error);
-    historyList.innerHTML = '<p>Failed to load chat history.</p>';
-  }
-}
-
-// Restore chat history to the UI (enhanced with diffing)
-async function restoreChatHistory() {
-  console.log('Restoring chat history to UI...');
-
-  // Check if clear button was clicked
-  if (window.clearButtonClicked) {
-    console.log('Clear button was clicked, skipping restore chat history');
-    window.clearButtonClicked = false; // Reset the flag
-    return;
-  }
-
-  try {
-    if (window.chatDataManager) {
-      // Load from storage using data manager
-      await window.chatDataManager.loadFromStorage();
-      const currentMemory = window.chatDataManager.getCurrentMemory();
-
-      // Reset differ and render messages
-      window.messageDiffer.reset();
-      renderMessages(currentMemory);
-
-      console.log(`Restored ${currentMemory.length} messages using enhanced system.`);
-    }
-  } catch (error) {
-    console.error('Failed to restore chat history:', error);
-    showMiniToast('Failed to restore chat history');
-  } finally {
-    // Ensure the flag is reset even if there's an error
-    window.clearButtonClicked = false;
-  }
-}
-
-// Initialize the chatbot
+// Call setupSidePanelEventListeners after injecting chat HTML
 function initChatbot() {
-  // Inject the chat HTML
   injectChatHtml(() => {
-    // Set up event listeners after HTML is injected
     setupEventListeners();
+    setupSidePanelEventListeners(); // Add this line
     
     // Initialize chatDataManager
     window.chatDataManager = window.chatDataManager || new ChatDataManager();
-// Restore chat history with enhanced system
-if (!window.clearButtonClicked) {
-  setTimeout(async () => {
-    await restoreChatHistory();
-  }, 500);
-}
 
+    // Restore chat history with enhanced system
+    if (!window.clearButtonClicked) {
+      setTimeout(async () => {
+        try {
+          await restoreChatHistory();
+        } catch (error) {
+          console.error('Error restoring chat history:', error);
+        }
+      }, 500);
+    }
     
     // Test content script connection
-    testContentScriptConnection();
-    
-    // Add status indicator to header
-    addStatusToHeader(true);
-  });
-}
-
-// Legacy compatibility function
-function loadChatHistoryFromStorage() {
-  console.log('Legacy loadChatHistoryFromStorage called - using enhanced system');
-  return restoreChatHistory();
-}
-
-// Inject the chat icon bubble
-function injectChatIcon() {
-  // Check if we have the resource URLs yet
-  if (!window.extensionResources) {
-    // If not, request them and return
-    // Use the global sendToContentScript function
-    if (typeof window.sendToContentScript === 'function') {
-      window.sendToContentScript({ type: 'getResourceURLs' });
+    if (typeof testContentScriptConnection === 'function') {
+      testContentScriptConnection();
     } else {
-      console.error('sendToContentScript function not available');
+      console.warn('testContentScriptConnection is not defined');
     }
-    return;
-  }
+    
+    // Add status to header
+    if (typeof addStatusToHeader === 'function') {
+      addStatusToHeader(true); // Assume connected for now, can be updated
+    } else {
+      console.warn('addStatusToHeader is not defined');
+    }
 
-  // Remove existing icon if present
-  const existingIcon = document.getElementById('n8n-builder-icon');
-  if (existingIcon) existingIcon.remove();
-
-  // Get the icon URL
-  const iconUrl = getResourceURL('icons/chat-icon-48.png');
-
-  // Create the chat icon
-  const iconDiv = document.createElement('div');
-  iconDiv.id = 'n8n-builder-icon';
-  iconDiv.className = 'n8n-builder-chat-icon';
-  iconDiv.innerHTML = `
-    <img src="${iconUrl}" alt="n8n Co Pilot" />
-  `;
-  document.body.appendChild(iconDiv);
-
-  // Add click event to the icon
-  iconDiv.addEventListener('click', () => {
-    toggleChat();
+    const chatVisible = localStorage.getItem('n8n-copilot-chat-visible');
+    const chatContainer = document.getElementById('n8n-builder-chat');
+    if (chatContainer) {
+      chatContainer.style.display = chatVisible === 'true' ? 'flex' : 'none';
+      console.log('Chat container is visible:', chatContainer.style.display === 'flex');
+    } else {
+      console.warn('Chat container not found');
+    }
   });
 }
+
+// Function to show a loading indicator
+function showLoadingIndicator() {
+  const messagesArea = document.getElementById('n8n-builder-messages');
+  if (!messagesArea) return;
+
+  const loadingIndicator = document.createElement('div');
+  loadingIndicator.id = 'n8n-builder-loading';
+  loadingIndicator.className = 'n8n-builder-message assistant-message';
+  loadingIndicator.innerHTML = `
+    <div class="message-avatar assistant-avatar"></div>
+    <div class="message-content">
+      <div class="typing-indicator">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </div>
+  `;
+  messagesArea.appendChild(loadingIndicator);
+  messagesArea.scrollTop = messagesArea.scrollHeight;
+}
+
+// Function to hide the loading indicator
+function hideLoadingIndicator() {
+  const loadingIndicator = document.getElementById('n8n-builder-loading');
+  if (loadingIndicator) {
+    loadingIndicator.remove();
+  }
+}
+
+// Make functions globally accessible
+window.updateN8nPageIndicator = updateN8nPageIndicator;
+window.addStatusToHeader = addStatusToHeader;
+window.restoreChatHistory = restoreChatHistory;
+window.toggleChat = toggleChat;
+window.addMessage = addMessage;
+window.showMiniToast = showMiniToast;
+window.showChatbot = showChatbot;
+window.hideChatbot = hideChatbot;
+window.openSidePanel = openSidePanel;
+window.closeSidePanel = closeSidePanel;
+window.loadChatHistory = loadChatHistory;
+window.refreshChatUI = refreshChatUI;
+window.showLoadingIndicator = showLoadingIndicator;
+window.hideLoadingIndicator = hideLoadingIndicator;

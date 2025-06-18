@@ -9,7 +9,7 @@ async function callOpenAI(userMessage) {
   }
 
   // Show loading indicator
-  showLoadingIndicator();
+  window.showLoadingIndicator();
 
   try {
     // Prepare messages array with conversation history
@@ -173,7 +173,7 @@ REMEMBER: Every node creation request MUST include JSON. No exceptions!`
     const assistantMessage = data.choices[0].message.content;
 
     // Remove loading indicator
-    removeLoadingIndicator();
+    window.hideLoadingIndicator();
 
     // Add assistant response to chat
     addMessage('assistant', assistantMessage);
@@ -268,7 +268,7 @@ REMEMBER: Every node creation request MUST include JSON. No exceptions!`
     }
 
   } catch (error) {
-    removeLoadingIndicator();
+    window.hideLoadingIndicator();
     addMessage('assistant', `Error: ${error.message}`);
   }
 }

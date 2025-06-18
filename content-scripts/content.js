@@ -578,9 +578,9 @@ function setupCommunicationBridge() {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Message received in content script:', request);
 
-  // Handle the showChat action from settings
-  if (request.action === 'showChat') {
-    console.log('Show chat action received');
+  // Handle the toggleChat action from settings
+  if (request.action === 'toggleChat') {
+    console.log('Toggle chat action received');
 
     // Make sure the chatbot script is injected
     injectChatbotScript();
@@ -589,7 +589,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     setTimeout(() => {
       window.dispatchEvent(new CustomEvent('n8nCopilotContentEvent', {
         detail: {
-          type: 'showChat'
+          type: 'toggleChat'
         }
       }));
     }, 200); // Longer delay to ensure script is loaded

@@ -360,11 +360,13 @@ class ChatDataManager {
         const transaction = this.db.transaction(['conversations'], 'readwrite');
         const store = transaction.objectStore('conversations');
         
-        await new Promise((resolve, reject) => {
-          const request = store.put(conversationData);
-          request.onsuccess = () => resolve();
-          request.onerror = () => reject(request.error);
-        });
+        const request = store.put(conversationData);
+        request.onsuccess = () => {
+          console.log('Conversation data saved to IndexedDB');
+        };
+        request.onerror = (event) => {
+          console.error('Failed to save conversation to IndexedDB:', event.target.error);
+        };
 
       } catch (error) {
         console.warn('IndexedDB persistence failed, falling back to cookie:', error);
@@ -405,60 +407,68 @@ class ChatDataManager {
         const transaction = this.db.transaction(['conversations'], 'readonly');
         const store = transaction.objectStore('conversations');
         
-        const conversationData = await new Promise((resolve, reject) => {
-          const request = store.get('current');
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error);
-        });
-
-        if (conversationData && conversationData.messages) {
-          validateConversation(conversationData.messages);
-          window.chatMemory = conversationData.messages;
+        const request = store.get('current');
+        request.onsuccess = (event) => {
+          const conversationData = event.target.result;
+          if (conversationData && conversationData.messages) {
+            validateConversation(conversationData.messages);
+            window.chatMemory = conversationData.messages;
           
-          // Debug logging
-          if (window.chatHistoryDebugger) {
-            window.chatHistoryDebugger.log('Data loaded from IndexedDB', 'debug', {
-              messagesCount: window.chatMemory.length
-            });
+            // Debug logging
+            if (window.chatHistoryDebugger) {
+              window.chatHistoryDebugger.log('Data loaded from IndexedDB', 'debug', {
+                messagesCount: window.chatMemory.length
+              });
+            }
+          
+            return window.chatMemory;
+          } else {
+            return null; // No data found in IndexedDB
           }
-          
-          return window.chatMemory;
-        }
+        };
+        request.onerror = (event) => {
+          console.warn('Failed to load conversation from IndexedDB:', event.target.error);
+        };
       } catch (error) {
         console.warn('IndexedDB loading failed, trying cookie fallback:', error);
       }
 
       // Fallback to cookies
-      if (typeof window.getCookie === 'function') {
-        const cookieData = window.getCookie('n8n-copilot-chat-memory');
-        
-        if (cookieData) {
-          try {
-            const parsedData = JSON.parse(cookieData);
-            validateConversation(parsedData);
-            window.chatMemory = parsedData;
-            
-            // Migrate to IndexedDB
+      try {
+        if (typeof window.getCookie === 'function') {
+          const cookieData = window.getCookie('n8n-copilot-chat-memory');
+
+          if (cookieData) {
             try {
-              await this.persistToStorage();
-            } catch (migrationError) {
-              console.warn('Failed to migrate to IndexedDB:', migrationError);
+              const parsedData = JSON.parse(cookieData);
+              validateConversation(parsedData);
+              window.chatMemory = parsedData;
+
+              // Migrate to IndexedDB
+              try {
+                await this.persistToStorage();
+                console.log('Successfully migrated chat history from cookie to IndexedDB');
+              } catch (migrationError) {
+                console.warn('Failed to migrate to IndexedDB:', migrationError);
+              }
+
+              // Debug logging
+              if (window.chatHistoryDebugger) {
+                window.chatHistoryDebugger.log('Data loaded from cookie', 'debug', {
+                  messagesCount: window.chatMemory.length
+                });
+              }
+
+              return window.chatMemory;
+            } catch (error) {
+              console.error('Failed to parse chat history from cookie:', error);
+              this.showStorageError('Storage data corruption detected');
+              throw new Error(`Storage data corruption: ${error.message}`);
             }
-            
-            // Debug logging
-            if (window.chatHistoryDebugger) {
-              window.chatHistoryDebugger.log('Data loaded from cookie', 'debug', {
-                messagesCount: window.chatMemory.length
-              });
-            }
-            
-            return window.chatMemory;
-          } catch (error) {
-            console.error('Failed to parse chat history from cookie:', error);
-            this.showStorageError('Storage data corruption detected');
-            throw new Error(`Storage data corruption: ${error.message}`);
           }
         }
+      } catch (error) {
+        console.warn('Cookie loading failed, trying localStorage fallback:', error);
       }
 
       // Fallback to localStorage for migration

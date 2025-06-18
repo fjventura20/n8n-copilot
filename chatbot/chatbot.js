@@ -182,7 +182,7 @@
     const data = event.detail;
     console.log('Event from content script:', data);
 
-    if (data.type === 'showChat') {
+    if (data.type === 'toggleChat') {
       toggleChat();
     }
 
@@ -192,27 +192,15 @@
       console.log('Got extension resources:', window.extensionResources);
 
       // Inject chat CSS if not already present
-      function injectChatStyles() {
-        if (document.getElementById('n8n-builder-styles')) return;
-        // Request the CSS URL from the content script
-        // Use the global sendToContentScript function
-        if (typeof window.sendToContentScript === 'function') {
-          window.sendToContentScript({ type: 'getResourceURL', path: 'chatbot/chatbot.css' });
-        } else {
-          console.error('sendToContentScript function not available');
+      if (!document.getElementById('n8n-builder-styles')) {
+        const cssUrl = getResourceURL('chatbot/chatbot.css');
+        if (cssUrl) {
+          applyChatStyles(cssUrl);
         }
       }
 
-      // Now that we have the resources, we can inject the icon and styles
+      // Now that we have the resources, we can inject the icon
       injectChatIcon();
-      injectChatStyles();
-    }
-
-    if (data.type === 'resourceURL') {
-      console.log('Received resource URL:', data.path, data.url);
-      if (data.path === 'chatbot/chatbot.css') {
-        applyChatStyles(data.url);
-      }
     }
 
     if (data.type === 'chatHtml') {
